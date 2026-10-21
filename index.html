@@ -131,6 +131,7 @@ td.r,th.r{text-align:right}
 .msg time{display:block;font-size:11px;opacity:.7;margin-top:2px}
 .composer{position:fixed;left:0;right:0;bottom:calc(57px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);z-index:5}
 .composer .wrap{display:flex;gap:8px;padding-block:8px;align-items:center}
+main .composer .wrap{flex-direction:row;padding-block:8px}
 .composer input[type=text]{flex:1;min-width:0;border:1px solid var(--line);background:var(--sunk);border-radius:20px;padding:9px 14px}
 .iconbtn{width:40px;height:40px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--sunk);flex:none}
 .iconbtn.p{background:var(--accent);color:var(--accent-ink)}
@@ -239,6 +240,15 @@ table.rep{font-size:12px;white-space:nowrap}table.rep td,table.rep th{padding:6p
 .prose h3{font-size:16px;margin-top:6px}.prose p{margin:4px 0 10px;line-height:1.55;max-width:65ch}
 .chips.wrap{flex-wrap:wrap;overflow:visible}
 .pzlist{max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:0 12px}
+.msg.del{cursor:pointer}.msg.del:active{opacity:.7}
+.chat-hint{text-align:center;font-size:12px;color:var(--muted);margin:2px 0 0}
+.warncard{background:var(--warn-soft);border-color:var(--warn);color:var(--fg)}
+.warncard b{color:var(--warn)}.warncard ul{margin:8px 0 10px;padding-left:20px;font-size:14px;line-height:1.5}
+.btn.danger{color:var(--bad)}
+.lnk{background:none;border:0;padding:0 0 0 8px;font:inherit;font-size:11px;font-weight:700;text-decoration:underline;color:inherit;opacity:.8;cursor:pointer}
+.msg.gone{background:transparent;border-style:dashed;color:var(--muted);font-style:italic}
+.msg.me.gone{background:transparent;color:var(--muted);border:1px dashed var(--line)}
+.trn{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:12px;padding:4px 12px;max-height:220px;overflow:auto}
 .offline{background:var(--bad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:5px 12px}
 .login form.card{display:flex;flex-direction:column;gap:12px}
 </style>
@@ -272,8 +282,8 @@ async function loadAll(){
   loading=true;
   const T=n=>q(sb.from(n).select("*"));
   const isAdm=PROFIL.uloga==="admin";
-  const [lok,cij,post,prof,grupe,term,clan,dod,upl,pris,izm,obv,tak,prij,rez,por,proc,poz]=await Promise.all([
-    T("lokacije"),T("cijene"),T("postavke"),T("profili"),T("grupe"),T("termini"),T("clanice"),T("clanice_dodatne"),T("uplate"),T("prisustvo"),
+  const [lok,cij,post,prof,grupe,gtr,term,clan,dod,upl,pris,izm,obv,tak,prij,rez,por,proc,poz]=await Promise.all([
+    T("lokacije"),T("cijene"),T("postavke"),T("profili"),T("grupe"),T("grupe_treneri").catch(()=>[]),T("termini"),T("clanice"),T("clanice_dodatne"),T("uplate"),T("prisustvo"),
     T("izmjene"),T("obavijesti"),T("takmicenja"),T("prijave"),T("rezultati"),q(sb.from("poruke").select("*").order("vrijeme")),T("procitano"),isAdm?T("pozivnice"):Promise.resolve([])]);
   const n={role:PROFIL.uloga==="trener"?"trener":PROFIL.uloga,me:PROFIL.id,meKid:PROFIL.clanica_id};
   n.lok=lok.map(l=>({id:l.id,name:l.naziv})).sort((a,b)=>a.name.localeCompare(b.name,"bs"));
@@ -284,7 +294,8 @@ async function loadAll(){
   n.inv={};poz.forEach(p=>n.inv[p.email]={email:p.email,uloga:p.uloga,ime:p.ime||"",telefon:p.telefon||"",clanica_id:p.clanica_id||null});
   poz.filter(p=>p.uloga==="roditelj").forEach(p=>{if(!prof.some(x=>x.email===p.email))n.rod["e:"+p.email]={name:p.ime||p.email,tel:p.telefon||"",mail:p.email}});
   n.grupe=grupe.map(g=>{const ds=term.filter(t=>t.grupa_id===g.id).sort((a,b)=>a.dan-b.dan).map(t=>[t.dan,t5(t.od),t5(t.do),t.lokacija_id]);
-    return{id:g.id,name:g.naziv,cijena:g.cijena_id,trener:g.trener_id,dodatni:g.dodatni,arh:g.arhivirana,days:ds,locId:ds[0]?.[3]||null}});
+    const tr=gtr.filter(t=>t.grupa_id===g.id).sort((a,b)=>a.redoslijed-b.redoslijed).map(t=>t.trener_id);if(!tr.length&&g.trener_id)tr.push(g.trener_id);
+    return{id:g.id,name:g.naziv,cijena:g.cijena_id,trener:tr[0]||g.trener_id,treneri:tr,dodatni:g.dodatni,arh:g.arhivirana,days:ds,locId:ds[0]?.[3]||null}});
   n.kids=clan.map(c=>{const rod=c.roditelj_id||(c.roditelj_email?"e:"+c.roditelj_email.toLowerCase():"");
     if(rod.startsWith("e:")&&!n.rod[rod])n.rod[rod]={name:c.roditelj_email,tel:"",mail:c.roditelj_email};
     return{id:c.id,ime:c.ime,dob:c.datum_rodjenja||"",upis:c.datum_upisa||"",grupa:c.grupa_id,rod,status:c.status,cijena:c.cijena_id||undefined,
@@ -294,7 +305,7 @@ async function loadAll(){
   n.izmjene=izm.map(z=>({id:z.id,g:z.grupa_id,date:z.datum,type:z.tip,od:t5(z.od),do:t5(z.do),locId:z.lokacija_id,note:z.napomena||""}));
   n.notices=obv.map(o=>({id:o.id,kind:o.vrsta,title:o.naslov,body:o.tekst||"",d:iso(new Date(o.napravljeno)),from:o.autor_id,tgt:cilj2tgt(o.cilj),ts:o.napravljeno})).sort((a,b)=>b.ts.localeCompare(a.ts));
   n.events=tak.map(e=>({id:e.id,naziv:e.naziv,mjesto:e.mjesto||"",datum:e.datum,datumDo:e.datum_do||undefined,prijavaDo:e.prijava_do,kotizacija:+e.kotizacija||0,pozvane:e.pozvane||null,
-    prijave:prij.filter(p=>p.takmicenje_id===e.id).map(p=>p.clanica_id)}));
+    prijave:prij.filter(p=>p.takmicenje_id===e.id).map(p=>p.clanica_id),placeno:prij.filter(p=>p.takmicenje_id===e.id&&p.kotizacija_placena).map(p=>p.clanica_id)}));
   n.results=rez.map(r=>({id:r.id,eventId:r.takmicenje_id,kidId:r.clanica_id,kategorija:r.kategorija||"–",rekvizit:r.rekvizit||"",ocjena:+r.ocjena,plasman:r.plasman}));
   n.threads={};await fillThreads(n,por);
   n.seen={};const suf=(n.role==="roditelj"||n.role==="clanica")?"|r":"|t";proc.forEach(p=>n.seen[fromNit(p.nit)+suf]=locStamp(p.vrijeme)+":99");
@@ -302,9 +313,9 @@ async function loadAll(){
   base=rowsFromS();loading=false;
 }
 async function fillThreads(n,por){
-  const paths=por.filter(m=>m.slika).map(m=>m.slika);let urls={};
+  const paths=por.filter(m=>m.slika&&!m.obrisana).map(m=>m.slika);let urls={};
   if(paths.length){try{const r=await sb.storage.from("slike").createSignedUrls(paths,60*60*24);(r.data||[]).forEach(x=>{if(x.signedUrl)urls[x.path]=x.signedUrl})}catch(e){}}
-  por.forEach(m=>{const k=fromNit(m.nit);(n.threads[k]=n.threads[k]||[]).push({id:m.id,f:m.od,x:m.tekst||"",img:m.slika?urls[m.slika]||"":"",t:locStamp(m.vrijeme)})});
+  por.forEach(m=>{const k=fromNit(m.nit);(n.threads[k]=n.threads[k]||[]).push({id:m.id,autor:m.autor_id,mine:!!PROFIL&&m.autor_id===PROFIL.id,del:!!m.obrisana,f:m.od,x:m.obrisana?"":(m.tekst||""),img:m.obrisana||!m.slika?"":urls[m.slika]||"",t:locStamp(m.vrijeme)})});
 }
 async function refreshMessages(){
   if(!PROFIL||loading||document.hidden)return;
@@ -316,12 +327,13 @@ async function refreshMessages(){
 /* ---------- stanje → redovi tabela ---------- */
 function rowsFromS(){
   const T={};const put=(t,k,r)=>{(T[t]=T[t]||{})[k]=r};
-  ["lokacije","cijene","postavke","profili","grupe","termini","clanice","clanice_dodatne","pozivnice","uplate","prisustvo","izmjene","takmicenja","prijave","rezultati","obavijesti"].forEach(t=>T[t]={});
+  ["lokacije","cijene","postavke","profili","grupe","grupe_treneri","termini","clanice","clanice_dodatne","pozivnice","uplate","prisustvo","izmjene","takmicenja","prijave","rezultati","obavijesti"].forEach(t=>T[t]={});
   S.lok.forEach(l=>put("lokacije",l.id,{id:l.id,naziv:l.name}));
   S.cfg.cijene.forEach((c,i)=>put("cijene",c.id,{id:c.id,tip:c.tip,opis:c.l,iznos:c.v,jedinica:c.tip==="ostalo"?(c.j||null):null,cijena_a:c.tip==="sestre"?c.a:null,cijena_b:c.tip==="sestre"?c.b:null,redoslijed:i}));
   put("postavke","1",{id:1,napomena_cjenovnik:S.cfg.napomena});
   if(S.role==="admin")S.staff.forEach(s=>put("profili",s.id,{id:s.id,ime:s.ime,telefon:s.tel||null,uloga:s.uloga}));
-  S.grupe.forEach(g=>{put("grupe",g.id,{id:g.id,naziv:g.name,cijena_id:g.cijena||null,trener_id:g.trener||null,dodatni:!!g.dodatni,arhivirana:!!g.arh});
+  S.grupe.forEach(g=>{const tr=gTr(g);put("grupe",g.id,{id:g.id,naziv:g.name,cijena_id:g.cijena||null,trener_id:tr[0]||null,dodatni:!!g.dodatni,arhivirana:!!g.arh});
+    tr.forEach((t,i)=>put("grupe_treneri",g.id+"|"+t,{grupa_id:g.id,trener_id:t,redoslijed:i}));
     g.days.forEach(d=>put("termini",g.id+"|"+d[0],{grupa_id:g.id,dan:d[0],od:d[1],do:d[2],lokacija_id:d[3]||g.locId}))});
   S.kids.forEach(k=>{const pend=k.rod.startsWith("e:");
     put("clanice",k.id,{id:k.id,ime:k.ime,datum_rodjenja:k.dob||null,datum_upisa:k.upis||null,grupa_id:k.grupa||null,roditelj_id:pend||!k.rod?null:k.rod,
@@ -332,13 +344,13 @@ function rowsFromS(){
   Object.entries(S.att).forEach(([key,v])=>{const[d,g]=key.split("|");Object.entries(v).forEach(([k,x])=>{if(x)put("prisustvo",key+"|"+k,{datum:d,grupa_id:g,clanica_id:k,stanje:x})})});
   S.izmjene.forEach(z=>put("izmjene",z.id,{id:z.id,grupa_id:z.g,datum:z.date,tip:z.type,od:z.type==="cancel"?null:z.od,do:z.type==="cancel"?null:z.do,lokacija_id:z.type==="cancel"?null:z.locId,napomena:z.note||null}));
   S.events.forEach(e=>{put("takmicenja",e.id,{id:e.id,naziv:e.naziv,mjesto:e.mjesto||null,datum:e.datum,datum_do:e.datumDo||null,prijava_do:e.prijavaDo,kotizacija:e.kotizacija||0,pozvane:e.pozvane||null});
-    e.prijave.forEach(k=>put("prijave",e.id+"|"+k,{takmicenje_id:e.id,clanica_id:k}))});
+    e.prijave.forEach(k=>put("prijave",e.id+"|"+k,{takmicenje_id:e.id,clanica_id:k,kotizacija_placena:(e.placeno||[]).includes(k)}))});
   S.results.forEach(r=>put("rezultati",r.id,{id:r.id,takmicenje_id:r.eventId,clanica_id:r.kidId,kategorija:r.kategorija,rekvizit:r.rekvizit,ocjena:r.ocjena,plasman:r.plasman}));
   S.notices.forEach(n=>put("obavijesti",n.id,{id:n.id,vrsta:n.kind,naslov:n.title,tekst:n.body||null,cilj:tgt2cilj(n.tgt),autor_id:n.from}));
   return T;
 }
-const PK={termini:["grupa_id","dan"],clanice_dodatne:["clanica_id","grupa_id"],uplate:["clanica_id","mjesec"],prisustvo:["datum","grupa_id","clanica_id"],prijave:["takmicenje_id","clanica_id"],pozivnice:["email"]};
-const ORDER=["lokacije","cijene","postavke","profili","grupe","termini","clanice","clanice_dodatne","pozivnice","uplate","prisustvo","izmjene","takmicenja","prijave","rezultati","obavijesti"];
+const PK={grupe_treneri:["grupa_id","trener_id"],termini:["grupa_id","dan"],clanice_dodatne:["clanica_id","grupa_id"],uplate:["clanica_id","mjesec"],prisustvo:["datum","grupa_id","clanica_id"],prijave:["takmicenje_id","clanica_id"],pozivnice:["email"]};
+const ORDER=["lokacije","cijene","postavke","profili","grupe","grupe_treneri","termini","clanice","clanice_dodatne","pozivnice","uplate","prisustvo","izmjene","takmicenja","prijave","rezultati","obavijesti"];
 const NOINS={profili:1,postavke:1};
 function match(t,r){const ks=PK[t]||["id"];const o={};ks.forEach(k=>o[k]=r[k]);return o}
 
@@ -380,13 +392,27 @@ function setNet(ok){const b=document.getElementById("offline");if(b)b.hidden=ok}
 /* ---------- poruke ---------- */
 function myOd(){return S.role==="roditelj"?"parent":S.role==="clanica"?"kid":"staff"}
 async function sendToDb(p,m,blob){
-  const nit=toNit(p),row={id:uid(),nit,autor_id:S.me,od:myOd(),tekst:m.x||null,slika:null};
+  const nit=toNit(p),row={id:m.id||uid(),nit,autor_id:S.me,od:myOd(),tekst:m.x||null,slika:null};
   try{if(blob){const path=nit+"/"+uid()+".jpg";const up=await sb.storage.from("slike").upload(path,blob,{contentType:"image/jpeg"});if(up.error)throw up.error;row.slika=path}
     await q(sb.from("poruke").insert(row));}
   catch(e){console.error(e);toast(netMsg(e));const th=S.threads[p]||[];const i=th.findIndex(x=>x.tmp===m.tmp);if(i>=0)th.splice(i,1);render()}
 }
 function markSeen(p){const k=p+(isFam()?"|r":"|t"),now=nowStamp();if((S.seen[k]||"").slice(0,16)===now)return;S.seen[k]=now+":99";
   sb.from("procitano").upsert({nit:toNit(p),korisnik_id:S.me,vrijeme:new Date().toISOString()}).then(()=>{},()=>{})}
+
+function canDelMsg(m){return !!m.id&&!m.del&&!m.tmpErr&&(m.mine||S.role==="admin")}
+function askDelMsg(p,id){const m=(S.threads[p]||[]).find(x=>x.id===id);if(!m||!canDelMsg(m))return;
+  ask(`${m.mine?"Obrisati vašu poruku?":"Obrisati tuđu poruku kao administrator?"}<br><span class="small muted">„${esc((m.x||"📷 Fotografija").slice(0,80))}“ · Na njenom mjestu objema stranama piše „🚫 Poruka je obrisana“.</span>`,"Obriši poruku",()=>delMsg(p,id))}
+async function delMsg(p,id){const m=(S.threads[p]||[]).find(x=>x.id===id);if(!m)return;const old={x:m.x,img:m.img,del:m.del};
+  Object.assign(m,{x:"",img:"",del:true});render();
+  try{const r=await sb.rpc("obrisi_poruku",{poruka:id});if(r.error)throw r.error;toast("Poruka obrisana")}
+  catch(e){console.error(e);Object.assign(m,old);render();toast(/42501|ne možete|security/i.test(String(e.message||e))?"Ovu poruku ne možete obrisati.":netMsg(e))}}
+function askDelThread(p){const name=isKidT(p)?tKid(p)?.ime:rodN(p);
+  ask(`Obrisati cijeli razgovor s <b>${esc(name||"")}</b>? Sve poruke nestaju i kod druge osobe. Ovo se ne može vratiti.`,"Obriši razgovor",async()=>{
+    try{const r=await sb.rpc("obrisi_razgovor",{razgovor:toNit(p)});if(r.error)throw r.error;delete S.threads[p];view={seg:"chat"};render();toast("Razgovor obrisan")}
+    catch(e){console.error(e);toast(/42501|administrator/i.test(String(e.message||e))?"Samo administrator može obrisati razgovor.":netMsg(e))}})}
+function askDelNotice(id){const n=S.notices.find(x=>x.id===id);if(!n)return;
+  ask(`Obrisati obavijest <b>„${esc(n.title)}“</b>? Nestat će svim roditeljima kojima je poslana.`,"Obriši obavijest",()=>{S.notices=S.notices.filter(x=>x.id!==id);save();render();toast("Obavijest obrisana")})}
 
 /* ---------- prijava / registracija ---------- */
 let authMode="login",recovery=false;
@@ -495,7 +521,7 @@ const SD=["Pon","Uto","Sri","Čet","Pet","Sub","Ned"];
 const MJ=["jan","feb","mar","apr","maj","jun","jul","aug","sep","okt","nov","dec"];
 const MJF=["Januar","Februar","Mart","April","Maj","Juni","Juli","August","Septembar","Oktobar","Novembar","Decembar"];
 const UZ={pred:"Predškolski uzrast",skol:"Školski uzrast"};
-const PAY={placeno:["Plaćeno","ok"],neplaceno:["Nije plaćeno","bad"],ceka:["Čeka potvrdu","warn"],djelimicno:["Djelimično","info"],pauza:["Pauza","n"]};
+const PAY={placeno:["Plaćeno","ok"],neplaceno:["Nije plaćeno","bad"],ceka:["Čeka potvrdu","warn"],djelimicno:["Djelimično","info"],pauza:["Pauza","n"],prije:["Prije upisa","n"],obrisano:["Obrisana","n"]};
 const MST={aktivna:["Aktivna","ok"],pauza:["Pauza","warn"],ispisana:["Ispisana","n"]};
 const ATT={p:["Prisutna","ok"],o:["Opravdano","warn"],n:["Izostala","bad"]};
 
@@ -541,7 +567,10 @@ const usesLoc=(g,l)=>g.locId===l||g.days.some(d=>d[3]===l);
 const chip=(t,c)=>`<span class="chip ${c}">${esc(t)}</span>`;
 const isStaff=()=>S.role==="admin"||S.role==="trener";
 const activeGroups=()=>S.grupe.filter(g=>!g.arh);
-const myGroups=()=>S.role==="trener"?activeGroups().filter(g=>g.trener===S.me):activeGroups();
+const gTr=g=>g?(g.treneri&&g.treneri.length?g.treneri:(g.trener?[g.trener]:[])).filter(id=>stf(id)):[];
+const myGroups=()=>S.role==="trener"?activeGroups().filter(g=>gTr(g).includes(S.me)):activeGroups();
+const andList=a=>a.length<2?(a[0]||""):a.slice(0,-1).join(", ")+" i "+a[a.length-1];
+function trnL(g){const t=gTr(g).map(stf);if(!t.length)return"trenerica –";if(t.length===1)return"trenerica "+t[0].ime;return"trenerice "+andList(t.map(x=>first(x.ime)))}
 const groupKids=gid=>S.kids.filter(k=>k.status!=="ispisana"&&(k.grupa===gid||(k.dod||[]).includes(gid)));
 const schedTxt=g=>g.days.map(d=>`${SD[d[0]]} ${d[1]}–${d[2]}`).join(" · ")||"Nema termina";
 const clanica=n=>n===1?"1 članica":(n%10>=2&&n%10<=4&&(n%100<10||n%100>20))?n+" članice":n+" članica";
@@ -559,7 +588,15 @@ function kidFee(k){
   const pr=S.cfg.cijene.find(c=>c.tip==="sestre"&&((c.a===ra&&c.b===rb)||(c.a===rb&&c.b===ra)));
   return pr?Math.max(0,pr.v-base(fam[0])):base(k);
 }
-const payOf=(kId,m)=>S.pay[kId]?.[m]||{s:kid(kId)?.status==="pauza"?"pauza":"neplaceno"};
+const upisM=k=>k&&k.upis?k.upis.slice(0,7):"0000-00";
+const elig=(k,m)=>!!k&&m>=upisM(k);
+const NOPAY={prije:1,obrisano:1};
+function payOf(kId,m){const r=S.pay[kId]?.[m],k=kid(kId);
+  if(r&&r.s!=="neplaceno")return r;            // plaćene/ostale se nikad ne diraju
+  if(!elig(k,m))return{s:"prije",row:!!r};      // mjesec prije upisa: nije dug
+  return r||{s:k?.status==="pauza"?"pauza":"neplaceno"}}
+const owes=(kId,m)=>!NOPAY[payOf(kId,m).s];
+function preUpis(){const out=[];S.kids.forEach(k=>Object.entries(S.pay[k.id]||{}).forEach(([m,r])=>{if(r.s==="neplaceno"&&!elig(k,m))out.push({k,m})}));return out.sort((a,b)=>a.k.ime.localeCompare(b.k.ime,"bs")||a.m.localeCompare(b.m))}
 function setPay(kId,m,v){(S.pay[kId]=S.pay[kId]||{})[m]=v;save()}
 function debtsOf(k){const out=[];let amt=0;const fee=kidFee(k);
   sezMonths(curSez()).filter(m=>m<=ym()).forEach(m=>{const p=payOf(k.id,m);
@@ -591,8 +628,8 @@ const tKid=p=>kid(p.slice(2));
 const isFam=()=>S.role==="roditelj"||S.role==="clanica";
 const famRod=()=>S.role==="clanica"?kid(S.meKid)?.rod:PARENT;
 const myThread=()=>S.role==="clanica"?"k:"+S.meKid:PARENT;
-function unreadFor(p){return(S.threads[p]||[]).filter(m=>m.f!=="staff"&&m.t>(S.seen[p+"|t"]||"")).length}
-function unread(){if(isFam()){const p=myThread();return(S.threads[p]||[]).filter(m=>m.f==="staff"&&m.t>(S.seen[p+"|r"]||"")).length}
+function unreadFor(p){return(S.threads[p]||[]).filter(m=>!m.del&&m.f!=="staff"&&m.t>(S.seen[p+"|t"]||"")).length}
+function unread(){if(isFam()){const p=myThread();return(S.threads[p]||[]).filter(m=>!m.del&&m.f==="staff"&&m.t>(S.seen[p+"|r"]||"")).length}
   return threadKeys().reduce((a,p)=>a+unreadFor(p),0)}
 function noticesFor(p){const ks=S.role==="clanica"?myKids():S.kids.filter(k=>k.rod===p);const gs=ks.flatMap(k=>[k.grupa,...(k.dod||[])]);
   return S.notices.filter(n=>n.tgt==="all"||(n.tgt===p&&S.role!=="clanica")||gs.includes(n.tgt)||(n.tgt.startsWith("ev:")&&(()=>{const e=S.events.find(x=>x.id===n.tgt.slice(3));return e&&ks.some(k=>canEnter(e,k))})())).sort((a,b)=>b.d.localeCompare(a.d))}
@@ -626,7 +663,7 @@ screens.home=()=>isFam()?parentHome():adminHome();
 function adminHome(){
   const act=S.kids.filter(k=>k.status==="aktivna"),m=ym();
   let exp=0,col=0,paid=0,unp=0,ceka=0;
-  act.forEach(k=>{const f=kidFee(k),p=payOf(k.id,m);exp+=f;if(p.s==="placeno"){col+=f;paid++}else if(p.s==="djelimicno"){col+=p.paid||0;unp++}else if(p.s==="ceka")ceka++;else unp++});
+  act.forEach(k=>{const f=kidFee(k),p=payOf(k.id,m);if(NOPAY[p.s])return;exp+=f;if(p.s==="placeno"){col+=f;paid++}else if(p.s==="djelimicno"){col+=p.paid||0;unp++}else if(p.s==="ceka")ceka++;else unp++});
   const pend=act.filter(k=>payOf(k.id,m).s==="ceka");
   const nx=S.events.filter(e=>days(e.datumDo||e.datum)>=0).sort((a,b)=>a.datum.localeCompare(b.datum))[0];
   const tiles=[[act.length,"Aktivne članice","go('members')",""],[activeGroups().length,"Trening grupe","go('more',{s:'groups'})",""],[paid,"Plaćeno","go('pay',{f:'placeno'})","ok"],[unp,"Nije plaćeno","go('pay',{f:'neplaceno'})","bad"],[ceka,"Čeka potvrdu","go('pay',{f:'ceka'})","warn"],[unread(),"Nove poruke","go('msg')","pk"]];
@@ -663,7 +700,7 @@ function memberDetail(id){
   <div class="card"><div class="eyebrow">Prisustvo · sezona ${curSez()}</div><div class="count">${["p","o","n"].map(x=>`<div><b>${a[x]}</b><span>${ATT[x][0].toLowerCase()}</span></div>`).join("")}</div></div>
   <div class="card"><div class="row"><div class="grow"><div class="eyebrow">Takmičenja</div><div class="small muted">${rs.length} nastupa ukupno</div></div><div class="medals">${[1,2,3].map(n=>`<div><span class="medal m${n}">${n}.</span>×${med(n)}</div>`).join("")}</div></div>
   <button class="btn ghost sm" style="margin-top:10px" onclick="go('comp',{seg:'res',mode:'kid',kid:'${id}',sz:'sve'})">Svi rezultati</button></div>
-  <div class="card"><div class="eyebrow">Historija članarina</div><div class="list" style="margin-top:4px">${sezMonths(curSez()).filter(m=>m<=ym()).reverse().map(m=>{const p=payOf(id,m);return li(null,ymL(m),p.d?(p.s==="ceka"?"roditelj prijavio ":"uplaćeno ")+fd(p.d)+(p.s==="djelimicno"?` · ${p.paid} KM`:""):"",chip(...PAY[p.s]))}).join("")}</div></div>
+  <div class="card"><div class="eyebrow">Historija članarina</div><div class="list" style="margin-top:4px">${sezMonths(curSez()).filter(m=>m<=ym()&&(elig(k,m)||S.pay[id]?.[m]&&S.pay[id][m].s!=="neplaceno")).reverse().map(m=>{const p=payOf(id,m);return li(null,ymL(m),p.d?(p.s==="ceka"?"roditelj prijavio ":"uplaćeno ")+fd(p.d)+(p.s==="djelimicno"?` · ${p.paid} KM`:""):p.s==="obrisano"?"obrisana – nema obaveze":"",chip(...PAY[p.s])+(p.s==="obrisano"&&S.role==="admin"?`<button class="btn ghost sm" onclick="setPay('${id}','${m}',{s:'neplaceno'});render();toast('Članarina je vraćena')">Vrati</button>`:""))}).join("")||'<div class="li muted">Još nema članarina. Prva je za mjesec upisa.</div>'}</div></div>
   <div class="card"><div class="eyebrow">Račun roditelja · ${esc(r.name||"–")}</div><div class="list" style="margin-top:4px">${S.kids.filter(x=>x.rod===k.rod&&x.status!=="ispisana").map(x=>li(ini(x.ime),esc(x.ime),esc(grp(x.grupa)?.name||"")+" · "+kidFee(x)+" KM",x.id===id?chip("Ova članica","pk"):"",x.id===id?"":`sub({k:'${x.id}'})`)).join("")}</div>
   <button class="btn ghost sm" style="margin-top:8px" onclick="memberForm(null,'${k.rod}')">+ Dodaj sestru na isti račun</button></div>
   <div class="card stack"><div class="row"><div class="eyebrow grow">Pristup za članicu</div>${hasAccess(k)?chip("Ima pristup","ok"):chip("Nema pristup","n")}</div>
@@ -722,22 +759,28 @@ function ferr(t){const e=$("#fErr");if(e){e.textContent=t;e.hidden=false}}
 screens.pay=()=>{
   const m=view.m||ym(),f=view.f||"all";
   const act=S.kids.filter(k=>k.status!=="ispisana");
-  let exp=0,col=0;act.forEach(k=>{if(k.status!=="aktivna")return;const fee=kidFee(k),p=payOf(k.id,m);exp+=fee;if(p.s==="placeno")col+=fee;if(p.s==="djelimicno")col+=p.paid||0});
-  const rows=act.filter(k=>{const s=payOf(k.id,m).s;return f==="all"||(f==="neplaceno"?(s==="neplaceno"||s==="djelimicno"):s===f)}).sort((a,b)=>a.ime.localeCompare(b.ime,"bs"));
+  let exp=0,col=0;act.forEach(k=>{if(k.status!=="aktivna")return;const fee=kidFee(k),p=payOf(k.id,m);if(NOPAY[p.s])return;exp+=fee;if(p.s==="placeno")col+=fee;if(p.s==="djelimicno")col+=p.paid||0});
+  const pre=preUpis();
+  const rows=act.filter(k=>{const s=payOf(k.id,m).s;if(NOPAY[s])return false;return f==="all"||(f==="neplaceno"?(s==="neplaceno"||s==="djelimicno"):s===f)}).sort((a,b)=>a.ime.localeCompare(b.ime,"bs"));
   const debts=S.kids.filter(k=>k.status==="aktivna").map(k=>({k,...debtsOf(k)})).filter(d=>d.amt>0);
   const months=sezMonths(curSez()).filter(x=>x<=ym());
   return `<div class="sec-h"><h2>Uplate</h2><select id="selM" class="rolebtn" onchange="view.m=this.value;render()">${months.map(x=>`<option value="${x}" ${x===m?"selected":""}>${ymL(x)}</option>`).join("")}</select></div>
   <div class="card"><div class="row" style="align-items:baseline"><span class="score" style="font-size:28px">${col} KM</span><span class="muted">od ${exp} KM</span></div><div class="bar"><div style="width:${exp?Math.min(100,col/exp*100):0}%"></div></div>
   <div class="small muted" style="margin-top:6px">Iznos po djetetu računa se po cjenovniku, s popustom za sestre.</div></div>
+  ${pre.length&&S.role==="admin"?`<div class="card warncard"><b>${pre.length} ${pre.length===1?"članarina je":"članarina je"} iz mjeseci prije upisa – to nije dug:</b>
+    <ul>${pre.map(x=>`<li>${esc(x.k.ime)} – ${ymL(x.m)} (upisana ${fd(x.k.upis)})</li>`).join("")}</ul>
+    <button class="btn sm" onclick="askRemovePre()">Ukloni ih</button></div>`:""}
   ${debts.length?`<div class="card"><div class="row"><div class="eyebrow grow">Dugovanja</div><b class="num" style="color:var(--bad)">${debts.reduce((a,d)=>a+d.amt,0)} KM</b></div><div class="list" style="margin-top:4px">${debts.map(d=>li(null,esc(d.k.ime),esc(d.months.join(", ")),`<b class="num">${d.amt} KM</b>`)).join("")}</div></div>`:""}
   <div class="chips">${[["all","Sve"],["neplaceno","Nije plaćeno"],["ceka","Čeka potvrdu"],["placeno","Plaćeno"]].map(([k,l])=>`<button class="${f===k?"on":""}" onclick="view.f='${k}';render()">${l}</button>`).join("")}</div>
   <div class="card"><div class="list">${rows.map(k=>{const p=payOf(k.id,m),fee=kidFee(k);let info=`${esc(grp(k.grupa)?.name||"")} · ${fee} KM`;if(p.d)info+=` · ${p.s==="ceka"?"prijavljeno":"uplaćeno"} ${fd(p.d)}`;if(p.s==="djelimicno")info+=` · uplaćeno ${p.paid} KM`;
     let act="";if(p.s==="ceka")act=`<button class="btn sm" onclick="confirmPay('${k.id}','${m}')">Potvrdi uplatu</button>`;
-    else if(p.s==="neplaceno"||p.s==="djelimicno")act=`<button class="btn sm" onclick="payForm('${k.id}','${m}')">Evidentiraj uplatu</button><button class="btn ghost sm" onclick="remind('${k.id}','${m}')">Pošalji podsjetnik</button>`;
+    else if(p.s==="neplaceno"||p.s==="djelimicno")act=`<button class="btn sm" onclick="payForm('${k.id}','${m}')">Evidentiraj uplatu</button><button class="btn ghost sm" onclick="remind('${k.id}','${m}')">Pošalji podsjetnik</button>${p.s==="neplaceno"&&S.role==="admin"?`<button class="btn ghost sm danger" onclick="askDelPay('${k.id}','${m}')">Obriši</button>`:""}`;
     else if(p.s==="placeno")act=`<button class="btn ghost sm" onclick="setPay('${k.id}','${m}',{s:'neplaceno'});render();toast('Uplata poništena')">Poništi</button>`;
     return `<div class="li" style="flex-wrap:wrap"><span class="av">${ini(k.ime)}</span><div class="grow"><b>${esc(k.ime)}</b><div class="small muted">${info}</div></div>${chip(...PAY[p.s])}${act?`<div class="acts" style="flex-basis:100%;padding-left:50px">${act}</div>`:""}</div>`}).join("")||'<div class="li muted">Nema članica u ovom filteru.</div>'}</div></div>
   <p class="small muted">Online plaćanje nije uključeno. Ovdje se evidentira uplata koju je klub primio.</p>`;
 };
+function askDelPay(id,m){const k=kid(id);ask(`Obrisati članarinu za <b>${esc(k.ime)}</b> za ${ymL(m)}? Neće se računati kao dug.`,"Obriši članarinu",()=>{setPay(id,m,{s:"obrisano"});render();toast("Članarina obrisana")})}
+function askRemovePre(){const pre=preUpis();ask(`Ukloniti ${pre.length} neplaćenih članarina iz mjeseci prije upisa? Plaćene članarine se ne diraju.`,"Ukloni ih",()=>{preUpis().forEach(x=>{delete S.pay[x.k.id][x.m]});save();render();toast("Uklonjeno")})}
 function confirmPay(id,m){const p=payOf(id,m);setPay(id,m,{s:"placeno",paid:kidFee(kid(id)),d:p.d||iso(today())});render();toast("Uplata potvrđena: "+kid(id).ime)}
 function payForm(id,m){const k=kid(id),fee=kidFee(k);
   sheet(`<h2>Evidentiraj uplatu</h2><p class="muted" style="margin:0">${esc(k.ime)} · ${ymL(m)} · članarina ${fee} KM</p>
@@ -763,17 +806,17 @@ function groupsScreen(){
   return `${backBar("Trening grupe")}
   <div class="row"><button class="btn sm" onclick="groupForm()">+ Nova grupa</button><button class="btn ghost sm" onclick="sub({s:'locs'})">Lokacije</button><button class="btn ghost sm" onclick="sub({s:'oneoff'})">Jednokratna promjena</button></div>
   ${S.grupe.filter(g=>!g.arh).map(g=>`<div class="card"><div class="row"><div class="grow"><h3 style="font-size:18px">${esc(g.name)}</h3><div class="small muted">${esc(cjL(g.cijena))}${crow(g.cijena)?" · "+crow(g.cijena).v+" KM":""}${g.dodatni?" · dodatni trening":""} · ${clanica(groupKids(g.id).length)}</div></div><button class="btn ghost sm" onclick="groupForm('${g.id}')">Uredi</button></div>
-  <div class="kv" style="margin-top:8px"><div><span>Lokacija</span><b>${esc(gLoc(g))}</b></div><div><span>Trenerica</span><b>${esc(stf(g.trener)?.ime||"–")}</b></div></div>
+  <div class="kv" style="margin-top:8px"><div><span>Lokacija</span><b>${esc(gLoc(g))}</b></div><div><span>${gTr(g).length>1?"Trenerice":"Trenerica"}</span><b>${esc(trnL(g).replace(/^treneric[ae] /,""))}</b></div></div>
   <div class="week">${g.days.slice().sort((a,b)=>a[0]-b[0]).map(d=>`<span><b>${SD[d[0]]}</b>${d[1]}–${d[2]}<i>${mins(d[1],d[2])} min · ${esc(lokN(d[3]||g.locId))}</i></span>`).join("")||'<span class="muted">Nema termina</span>'}</div></div>`).join("")}
   ${S.grupe.some(g=>g.arh)?`<div class="eyebrow">Arhivirane grupe</div><div class="card"><div class="list">${S.grupe.filter(g=>g.arh).map(g=>li(null,esc(g.name),esc(cjL(g.cijena)),`<button class="btn ghost sm" onclick="grp('${g.id}').arh=false;save();render()">Vrati</button>`)).join("")}</div></div>`:""}`;
 }
-function groupForm(id){const g=id?grp(id):{name:"",cijena:S.cfg.cijene.find(c=>c.tip==="clan")?.id,locId:S.lok[0]?.id,trener:S.staff.find(x=>x.uloga==="trener")?.id,days:[],dodatni:false};
+function groupForm(id){const g=id?grp(id):{name:"",cijena:S.cfg.cijene.find(c=>c.tip==="clan")?.id,locId:S.lok[0]?.id,trener:null,treneri:[],days:[],dodatni:false};window.__tr=gTr(g).slice();
   const def=g.days[0]?.[3]||g.locId||S.lok[0]?.id;
   const lokOpts=sel=>S.lok.map(l=>`<option value="${l.id}" ${l.id===sel?"selected":""}>${esc(l.name)}</option>`).join("")+'<option value="new">+ Nova škola ili sala</option>';
   sheet(`<h2>${id?"Uredi grupu i termine":"Nova grupa"}</h2>
   <label class="f">Naziv grupe<input id="gN" value="${esc(g.name)}" placeholder="npr. Školski · KSIRC"></label>
   <label class="f">Članarina za ovu grupu<select id="gC">${S.cfg.cijene.filter(c=>c.tip!=="sestre").map(c=>`<option value="${c.id}" ${c.id===g.cijena?"selected":""}>${esc(c.l)} · ${c.v} KM${c.tip==="ostalo"&&c.j?" "+esc(c.j):""}</option>`).join("")}</select></label>
-  <label class="f">Trenerica<select id="gT">${S.staff.map(s=>`<option value="${s.id}" ${s.id===g.trener?"selected":""}>${esc(s.ime)}</option>`).join("")}</select></label>
+  <div class="f">Ko vodi treninge (može više trenerica)<div class="trn">${S.staff.slice().sort((a,b)=>(a.uloga===b.uloga?a.ime.localeCompare(b.ime,"bs"):a.uloga==="trener"?-1:1)).map(s=>`<label class="checkrow"><input type="checkbox" class="gtr" value="${s.id}" ${window.__tr.includes(s.id)?"checked":""} onchange="trPick(this)"> <span class="grow">${esc(s.ime)} <span class="muted small">· ${s.uloga==="admin"?"administrator":"trenerica"}</span></span><span class="chip pk trmain" data-id="${s.id}" ${window.__tr[0]===s.id?"":"hidden"}>glavna</span></label>`).join("")}</div><span class="small muted" style="font-weight:400">Prva označena je glavna. Svaka označena vidi grupu i vodi prisustvo.</span></div>
   <label class="checkrow"><input type="checkbox" id="gX" ${g.dodatni?"checked":""}> Dodatni trening (članice ga biraju uz svoju grupu)</label>
   <div class="eyebrow">Dani i termini</div>
   <p class="small muted" style="margin:0">Dodirnite dan, pa izaberite termin i školu za taj dan.</p>
@@ -792,10 +835,12 @@ function saveGroup(id){const n=$("#gN").value.trim();if(!n)return ferr("Upišite
     let l=$("#gl"+i).value;if(l==="new"){const ln=$("#gnli"+i).value.trim();if(!ln)return ferr(DAN[i]+": upišite naziv nove lokacije.");l=added[ln.toLowerCase()]||(S.lok.find(x=>x.name.toLowerCase()===ln.toLowerCase())?.id);if(!l){l=uid();S.lok.push({id:l,name:ln})}added[ln.toLowerCase()]=l}
     ds.push([i,a,b,l])}
   if(!ds.length)return ferr("Izaberite bar jedan dan treninga.");
-  const d={name:n,cijena:$("#gC").value,trener:$("#gT").value,locId:ds[0][3],days:ds,dodatni:$("#gX").checked};
+  const tr=(window.__tr||[]).filter(x=>stf(x));const d={name:n,cijena:$("#gC").value,trener:tr[0]||null,treneri:tr,locId:ds[0][3],days:ds,dodatni:$("#gX").checked};
   if(id){const g=grp(id);Object.assign(g,d);if($("#gNot")?.checked)S.notices.unshift({id:uid(),kind:"Raspored",title:"Novi raspored: "+n,body:"Od sada: "+ds.map(x=>`${DAN[x[0]].toLowerCase()} ${x[1]}–${x[2]}, ${lokN(x[3])}`).join("; ")+".",d:iso(today()),from:S.me,tgt:id})}
   else S.grupe.push({id:uid(),arh:false,...d});
   save();closeSheet();render();toast(id?"Grupa sačuvana":"Grupa dodana")}
+function trPick(cb){const t=window.__tr=window.__tr||[];const i=t.indexOf(cb.value);if(cb.checked&&i<0)t.push(cb.value);if(!cb.checked&&i>=0)t.splice(i,1);
+  document.querySelectorAll(".trmain").forEach(x=>x.hidden=x.dataset.id!==t[0])}
 function archGroup(id){if(S.kids.some(k=>k.status!=="ispisana"&&k.grupa===id)){ferr("U grupi još ima članica. Prvo ih premjestite u drugu grupu.");return}grp(id).arh=true;save();closeSheet();render();toast("Grupa je arhivirana")}
 
 /* lokacije */
@@ -843,7 +888,7 @@ function delOneOff(id){S.izmjene=S.izmjene.filter(z=>z.id!==id);save();render();
 /* izvoz u Excel */
 function reportData(t,m){const sz=curSez();
   if(t==="clanice")return[["Ime i prezime","Datum rođenja","Datum upisa","Grupa","Status","Roditelj","Telefon","E-mail","Članarina (KM)"],...S.kids.slice().sort((a,b)=>a.ime.localeCompare(b.ime,"bs")).map(k=>[k.ime,fd(k.dob),fd(k.upis),grp(k.grupa)?.name||"",MST[k.status][0],rodN(k.rod),S.rod[k.rod]?.tel||"",S.rod[k.rod]?.mail||"",k.status==="aktivna"?kidFee(k):0])];
-  if(t==="uplate")return[["Ime i prezime","Grupa","Mjesec","Članarina (KM)","Status","Uplaćeno (KM)","Datum"],...S.kids.filter(k=>k.status!=="ispisana").map(k=>{const p=payOf(k.id,m),f=kidFee(k);return[k.ime,grp(k.grupa)?.name||"",ymL(m),f,PAY[p.s][0],p.s==="placeno"?f:p.s==="djelimicno"?p.paid:0,fd(p.d)]})];
+  if(t==="uplate")return[["Ime i prezime","Grupa","Mjesec","Članarina (KM)","Status","Uplaćeno (KM)","Datum"],...S.kids.filter(k=>k.status!=="ispisana"&&owes(k.id,m)).map(k=>{const p=payOf(k.id,m),f=kidFee(k);return[k.ime,grp(k.grupa)?.name||"",ymL(m),f,PAY[p.s][0],p.s==="placeno"?f:p.s==="djelimicno"?p.paid:0,fd(p.d)]})];
   if(t==="prisustvo")return[["Ime i prezime","Grupa","Prisutna","Opravdano","Izostala","Prisustvo %"],...S.kids.filter(k=>k.status!=="ispisana").map(k=>{const a={p:0,o:0,n:0};Object.entries(S.att).forEach(([key,v])=>{if(v[k.id]&&sez(key.slice(0,10))===sz)a[v[k.id]]++});const t=a.p+a.o+a.n;return[k.ime,grp(k.grupa)?.name||"",a.p,a.o,a.n,t?Math.round(a.p/t*100)+"%":"–"]})];
   if(t==="rezultati")return[["Datum","Takmičenje","Mjesto","Ime i prezime","Kategorija","Rekvizit","Ocjena","Plasman"],...S.results.map(r=>({r,e:S.events.find(e=>e.id===r.eventId)})).filter(x=>x.e&&sez(x.e.datum)===sz).sort((a,b)=>a.e.datum.localeCompare(b.e.datum)||a.r.plasman-b.r.plasman).map(({r,e})=>[fd(e.datum),e.naziv,e.mjesto,kid(r.kidId)?.ime||"",r.kategorija,r.rekvizit,r.ocjena.toFixed(3).replace(".",","),r.plasman])];
   return[]}
@@ -863,7 +908,7 @@ function copyReport(){const ta=$("#repTxt");const txt=ta.value;
 function statsScreen(){const sz=curSez();const act=S.kids.filter(k=>k.status==="aktivna");
   const gRows=activeGroups().map(g=>{let p=0,t=0;Object.entries(S.att).forEach(([key,v])=>{if(key.endsWith("|"+g.id)&&sez(key.slice(0,10))===sz)Object.values(v).forEach(x=>{t++;if(x==="p")p++})});return{g,n:groupKids(g.id).filter(k=>k.status==="aktivna").length,pct:t?Math.round(p/t*100):null}});
   const maxN=Math.max(1,...gRows.map(r=>r.n));
-  const months=sezMonths(sz).filter(m=>m<=ym()).map(m=>{let e=0,c=0;act.forEach(k=>{const f=kidFee(k),p=payOf(k.id,m);e+=f;if(p.s==="placeno")c+=f;if(p.s==="djelimicno")c+=p.paid||0});return{m,e,c}});
+  const months=sezMonths(sz).filter(m=>m<=ym()).map(m=>{let e=0,c=0;act.forEach(k=>{const f=kidFee(k),p=payOf(k.id,m);if(NOPAY[p.s])return;e+=f;if(p.s==="placeno")c+=f;if(p.s==="djelimicno")c+=p.paid||0});return{m,e,c}});
   const evs=S.events.filter(e=>sez(e.datum)===sz),rs=S.results.filter(r=>evs.some(e=>e.id===r.eventId));const med=n=>rs.filter(r=>r.plasman===n).length;
   const newK=S.kids.filter(k=>k.upis&&sez(k.upis)===sz).length;
   return `${backBar("Statistika kluba")}<p class="small muted" style="margin:0">Sezona ${sz}</p>
@@ -879,7 +924,7 @@ function staffScreen(){
   return `${backBar("Treneri i administratori")}
   <p class="small muted" style="margin:0">Administrator vidi i mijenja sve. Trenerica vidi svoje grupe, vodi prisustvo, unosi rezultate i dopisuje se s roditeljima.</p>
   <button class="btn" onclick="staffForm()">+ Dodaj administratora ili trenericu</button>
-  ${["admin","trener"].map(u=>`<div class="eyebrow">${u==="admin"?"Administratori":"Trenerice"}</div><div class="card"><div class="list">${S.staff.filter(s=>s.uloga===u).map(s=>{const gs=S.grupe.filter(g=>!g.arh&&g.trener===s.id);
+  ${["admin","trener"].map(u=>`<div class="eyebrow">${u==="admin"?"Administratori":"Trenerice"}</div><div class="card"><div class="list">${S.staff.filter(s=>s.uloga===u).map(s=>{const gs=S.grupe.filter(g=>!g.arh&&gTr(g).includes(s.id));
     return li(ini(s.ime),esc(s.ime)+(s.id===S.me?' <span class="chip pk">Vi</span>':""),[s.mail,s.tel].filter(Boolean).map(esc).join(" · ")+(gs.length?"<br>Grupe: "+gs.map(g=>esc(g.name)).join(", "):""),"",`staffForm('${s.id}')`)}).join("")||'<div class="li muted">Još nema.</div>'}</div></div>`).join("")}
   ${pend.length?`<div class="eyebrow">Čekaju registraciju</div><div class="card"><div class="list">${pend.map(v=>li(ini(v.ime||v.email),esc(v.ime||v.email),esc(v.email)+" · "+(v.uloga==="admin"?"administrator":"trenerica"),`<div class="acts" style="margin:0"><button class="btn ghost sm" onclick="copyInvite('${esc(v.email)}','${v.uloga}')">Kopiraj poziv</button><button class="btn ghost sm" onclick="delete S.inv['${esc(v.email)}'];save();render();toast('Poziv poništen')">Poništi</button></div>`)).join("")}</div></div>`:""}`;
 }
@@ -898,7 +943,7 @@ function saveStaff(id){const n=$("#sI").value.trim();if(!n)return ferr("Upišite
   const m=$("#sM").value.trim().toLowerCase();if(!/^\S+@\S+\.\S+$/.test(m))return ferr("Upišite ispravan e-mail.");
   if(S.staff.some(x=>x.mail===m)||S.inv[m])return ferr("Ovaj e-mail je već dodan.");
   S.inv[m]={email:m,uloga:u,ime:n,telefon:$("#sT").value.trim(),clanica_id:null};save();closeSheet();render();copyInvite(m,u)}
-function delStaff(id){if(S.grupe.some(g=>!g.arh&&g.trener===id))return ferr("Ova osoba vodi grupu. Prvo grupi dodijelite drugu trenericu.");
+function delStaff(id){const vg=S.grupe.filter(g=>!g.arh&&gTr(g).includes(id));if(vg.length)return ferr(`${stf(id).ime} vodi grupu ${andList(vg.map(g=>g.name))}. Prvo je uklonite iz te grupe.`);
   if(stf(id).uloga==="admin"&&S.staff.filter(x=>x.uloga==="admin").length<2)return ferr("Klub mora imati bar jednog administratora.");
   S.staff=S.staff.filter(s=>s.id!==id);save();closeSheet();render();toast("Uklonjeno")}
 
@@ -980,7 +1025,7 @@ function parentHome(){
   const lr=S.results.filter(r=>r.kidId===k.id).sort((a,b)=>S.events.find(e=>e.id===b.eventId).datum.localeCompare(S.events.find(e=>e.id===a.eventId).datum))[0];
   return `<div class="hero"><img src="${LOGO}" alt=""><div><div class="eyebrow">KRG Victory Hadžići</div><h1>Zdravo, ${esc(first(cl?k.ime:rodN(PARENT)))}!</h1><div class="small muted">Sezona ${curSez()}</div></div></div>
   ${kidSwitch()}
-  <div class="card"><div class="row"><span class="av big">${ini(k.ime)}</span><div class="grow"><h3 style="font-size:19px">${esc(k.ime)}</h3><div class="small muted">${esc(g?.name||"")} · trenerica ${esc(stf(g?.trener)?.ime||"–")}</div></div></div>
+  <div class="card"><div class="row"><span class="av big">${ini(k.ime)}</span><div class="grow"><h3 style="font-size:19px">${esc(k.ime)}</h3><div class="small muted">${esc(g?.name||"")} · ${esc(trnL(g))}</div></div></div>
   ${nx?`<div class="next"><span class="eyebrow">Sljedeći trening</span><b>${DAN[dIdx(nx.date)]}, ${fd(nx.date)} · ${nx.od}–${nx.do}</b><span class="small muted">${esc(lokN(nx.loc))}</span>${nx.z?`<span class="chip warn">Promjena termina</span>`:""}</div>`:""}</div>
   ${un?`<button class="card alert" onclick="go('msg',{scrollEnd:true})"><b>Nova poruka od trenerice</b><span class="small">Dodirnite za otvaranje razgovora</span></button>`:""}
   <div class="grid2">${cl?"":`<button class="card tile2" onclick="go('fee',{kid:'${k.id}'})"><span class="eyebrow">Članarina · ${MJF[new Date().getMonth()].toLowerCase()}</span><b class="score">${kidFee(k)} KM</b>${chip(...PAY[p.s])}</button>`}
@@ -991,14 +1036,14 @@ function parentHome(){
   ${noticesFor(famRod()).slice(0,4).map(noticeCard).join("")}`;
 }
 function recCount(t){if(t.startsWith("ev:")){const e=S.events.find(x=>x.id===t.slice(3));return e?evParents(e).size:0}if(t==="all")return new Set(S.kids.filter(k=>k.status==="aktivna").map(k=>k.rod)).size;if(grp(t))return new Set(groupKids(t).map(k=>k.rod)).size;return 1}
-function noticeCard(n){return `<div class="card"><div class="row"><span class="chip ${/Otkazan|Promjena/.test(n.kind)?"warn":n.kind==="Članarina"?"bad":"pk"}">${esc(n.kind)}</span><span class="small muted grow" style="text-align:right">${fd(n.d)}</span></div><h3 style="font-size:17px;margin-top:6px">${esc(n.title)}</h3><p style="margin:4px 0 0">${esc(n.body)}</p><div class="small muted" style="margin-top:6px">${esc(stf(n.from)?.ime||"Uprava kluba")}${isStaff()?` · Za: ${esc(tgtLabel(n.tgt))} · pojedinačno ${recCount(n.tgt)} ${recCount(n.tgt)===1?"roditelj":"roditelja"}`:""}</div></div>`}
+function noticeCard(n){return `<div class="card"><div class="row"><span class="chip ${/Otkazan|Promjena/.test(n.kind)?"warn":n.kind==="Članarina"?"bad":"pk"}">${esc(n.kind)}</span><span class="small muted grow" style="text-align:right">${fd(n.d)}</span>${S.role==="admin"?`<button class="btn ghost sm danger" onclick="askDelNotice('${n.id}')">Obriši</button>`:""}</div><h3 style="font-size:17px;margin-top:6px">${esc(n.title)}</h3><p style="margin:4px 0 0">${esc(n.body)}</p><div class="small muted" style="margin-top:6px">${esc(stf(n.from)?.ime||"Uprava kluba")}${isStaff()?` · Za: ${esc(tgtLabel(n.tgt))} · pojedinačno ${recCount(n.tgt)} ${recCount(n.tgt)===1?"roditelj":"roditelja"}`:""}</div></div>`}
 screens.sched=()=>{
   const k=curKid();if(!k)return"";
   const gs=[k.grupa,...(k.dod||[])].map(grp).filter(Boolean);
   const ch=S.izmjene.filter(z=>gs.some(g=>g.id===z.g)&&days(z.date)>=0).sort((a,b)=>a.date.localeCompare(b.date));
   return `<h2>Raspored</h2>${kidSwitch()}
   ${ch.map(z=>`<div class="card alert static"><b>${z.type==="cancel"?"Otkazan trening":"Promjena termina"} · ${DAN[dIdx(z.date)]}, ${fd(z.date)}</b><span class="small">${z.type==="cancel"?"Tog dana nema treninga.":`${z.od}–${z.do} · ${esc(lokN(z.locId))}`}${z.note?" "+esc(z.note):""}</span></div>`).join("")}
-  ${gs.map(g=>`<div class="card"><h3 style="font-size:18px">${esc(g.name)}</h3><div class="small muted">trenerica ${esc(stf(g.trener)?.ime||"–")}</div>
+  ${gs.map(g=>`<div class="card"><h3 style="font-size:18px">${esc(g.name)}</h3><div class="small muted">${esc(trnL(g))}</div>
   <div class="small" style="margin-top:6px">${I.pin.replace("<svg",'<svg class="inl"')} ${esc(gLoc(g))}</div>
   <div class="wk">${DAN.map((dn,i)=>{const d=g.days.find(x=>x[0]===i);return `<div class="${d?"on":""}"><span>${dn}</span><b>${d?d[1]+"–"+d[2]+`<small>${esc(lokN(d[3]||g.locId))}</small>`:"Nema treninga"}</b></div>`}).join("")}</div></div>`).join("")}
   ${S.role==="clanica"?"":`<div class="card"><details><summary>Cjenovnik članarina</summary>${pricesTable()}</details></div>`}`;
@@ -1008,14 +1053,13 @@ screens.fee=()=>{
   const k=curKid();if(!k)return"";const m=ym(),p=payOf(k.id,m),fee=kidFee(k);
   return `<h2>Članarina</h2>${kidSwitch()}
   <div class="card"><div class="eyebrow">${ymL(m)}</div><div class="row" style="margin-top:6px"><span class="score grow" style="font-size:30px">${fee} KM</span>${chip(...PAY[p.s])}</div>
-  <div class="small muted" style="margin-top:4px">${p.s==="placeno"?"Uplata potvrđena "+fd(p.d)+".":p.s==="ceka"?"Prijavili ste uplatu "+fd(p.d)+". Uprava kluba će je potvrditi.":p.s==="djelimicno"?`Uplaćeno ${p.paid} KM, preostalo ${fee-p.paid} KM.`:p.s==="pauza"?"Članica je na pauzi.":"Članarina za ovaj mjesec još nije evidentirana."}</div>
+  <div class="small muted" style="margin-top:4px">${p.s==="placeno"?"Uplata potvrđena "+fd(p.d)+".":p.s==="ceka"?"Uprava kluba provjerava uplatu.":p.s==="djelimicno"?`Uplaćeno ${p.paid} KM, preostalo ${fee-p.paid} KM.`:p.s==="pauza"?"Članica je na pauzi.":p.s==="prije"?"Članarina počinje od mjeseca upisa ("+fd(k.upis)+").":p.s==="obrisano"?"Za ovaj mjesec nema članarine.":"Članarina za ovaj mjesec još nije evidentirana."}</div>
   ${myKids().length>1?`<div class="fam"><span class="eyebrow">Ukupno za račun · ${MJF[new Date().getMonth()].toLowerCase()}</span>${myKids().filter(x=>x.status==="aktivna").map(x=>`<div><span>${esc(first(x.ime))}</span><b>${kidFee(x)} KM</b></div>`).join("")}<div class="tot"><span>Ukupno</span><b>${myKids().filter(x=>x.status==="aktivna").reduce((a,x)=>a+kidFee(x),0)} KM</b></div><span class="small muted">Popust za sestre je uračunat.</span></div>`:""}
-  ${p.s==="neplaceno"||p.s==="djelimicno"?`<button class="btn block" style="margin-top:12px" onclick="parentPaid('${k.id}','${m}')">Označi da je članarina uplaćena</button><p class="small muted" style="margin:8px 0 0">Uprava kluba će provjeriti uplatu. Do tada status ostaje „Čeka potvrdu“.</p>`:""}</div>
-  <div class="card"><div class="eyebrow">Historija uplata</div><div class="list" style="margin-top:4px">${sezMonths(curSez()).filter(x=>x<=m).reverse().map(x=>{const q=payOf(k.id,x);return li(null,ymL(x),q.d?fd(q.d):"",chip(...PAY[q.s]))}).join("")}</div></div>
+  ${p.s==="neplaceno"||p.s==="djelimicno"?`<p class="small muted" style="margin:10px 0 0">Članarinu platite treneru ili upravi kluba. Status ovdje mijenja klub kad primi uplatu.</p>`:""}</div>
+  <div class="card"><div class="eyebrow">Historija uplata</div><div class="list" style="margin-top:4px">${sezMonths(curSez()).filter(x=>x<=m&&owes(k.id,x)).reverse().map(x=>{const q=payOf(k.id,x);return li(null,ymL(x),q.d?fd(q.d):"",chip(...PAY[q.s]))}).join("")||'<div class="li muted">Još nema članarina.</div>'}</div></div>
   <div class="card"><details><summary>Cjenovnik</summary>${pricesTable()}</details></div>
-  <p class="small muted">Online plaćanje nije uključeno. Ovdje samo javljate klubu da ste uplatili.</p>`;
+  <p class="small muted">Status članarine mijenja samo uprava kluba.</p>`;
 };
-function parentPaid(id,m){setPay(id,m,{s:"ceka",d:iso(today())});render();toast("Uplata je prijavljena klubu")}
 
 /* ================= PORUKE ================= */
 screens.msg=()=>{
@@ -1031,24 +1075,25 @@ screens.msg=()=>{
   ${seg==="chat"?`<p class="small muted" style="margin:0">Roditelji i članice ne vide jedni druge. Razgovore s članicama vidi i njihov roditelj.</p>
   <div class="card"><div class="list">${ps.map(p=>{const c=S.threads[p]||[],last=c.at(-1),un=unreadFor(p);const kt=isKidT(p);
     const title=kt?esc(tKid(p).ime)+' <span class="chip pk">članica</span>':esc(rodN(p))+` <span class="small muted">· ${esc(S.kids.filter(k=>k.rod===p&&k.status!=="ispisana").map(k=>first(k.ime)).join(" i "))}</span>`;
-    return li(ini(kt?tKid(p).ime:rodN(p)),title,`<span class="ell">${last?(last.f==="staff"?"Vi: ":"")+(last.img&&!last.x?"Fotografija":esc(last.x)):"Započnite razgovor"}</span>`,un?`<span class="chip bad">${un}</span>`:"",`sub({p:'${p}',scrollEnd:true})`)}).join("")}</div></div>`
+    return li(ini(kt?tKid(p).ime:rodN(p)),title,`<span class="ell">${last?(last.del?"🚫 Poruka je obrisana":(last.f==="staff"?"Vi: ":"")+(last.img&&!last.x?"Fotografija":esc(last.x))):"Započnite razgovor"}</span>`,un?`<span class="chip bad">${un}</span>`:"",`sub({p:'${p}',scrollEnd:true})`)}).join("")}</div></div>`
   :`<button class="btn" onclick="noticeForm()">+ Nova obavijest</button>${notes.map(noticeCard).join("")}`}`;
 };
 function chatThread(p,ro){
   const me=S.role==="roditelj"?"parent":S.role==="clanica"?"kid":"staff";
   if(!ro)markSeen(p);
   const c=S.threads[p]||[],kt=isKidT(p);
-  const trn=esc(stf(grp((kt?tKid(p):curKid())?.grupa)?.trener)?.ime||"Trenerica");
+  const tgs=kt?[grp(tKid(p)?.grupa)]:(isFam()?myKids():S.kids.filter(k=>k.rod===p)).flatMap(k=>[k.grupa,...(k.dod||[])]).map(grp);const tl=[...new Set(tgs.filter(Boolean).flatMap(gTr))].map(stf).filter(Boolean);const trn=esc(tl.length>1?"Trenerice "+andList(tl.map(x=>first(x.ime))):tl[0]?.ime||"Trenerica");
   const who=m=>m.f==="staff"?(isFam()?trn:"Vi"):m.f==="kid"?esc(first(tKid(p)?.ime||"")):esc(first(rodN(p)));
-  const head=isFam()?`<div class="row"><img src="${LOGO}" alt="" style="width:40px;height:40px;border-radius:50%"><div><h2 style="font-size:19px">${trn}</h2><div class="small muted">${ro?"Razgovor vaše kćerke s trenericom · samo čitanje":S.role==="clanica"?"Tvoj roditelj može vidjeti ove poruke":"Privatni razgovor"}</div></div></div>`
+  const head=isFam()?`<div class="row"><img src="${LOGO}" alt="" style="width:40px;height:40px;border-radius:50%"><div><h2 style="font-size:19px">${trn}</h2><div class="small muted">${ro?"Razgovor vaše kćerke s trenericom · samo čitanje":S.role==="clanica"?"Tvoj roditelj može vidjeti ove poruke":tl.length>1?"Poruku vide "+andList(tl.map(x=>first(x.ime)))+" (trenerice) i uprava kluba":"Privatni razgovor"}</div></div></div>`
    :backBar(kt?esc(tKid(p).ime)+`<div class="small muted" style="font-family:var(--body);font-weight:400">Članica · roditelj ${esc(rodN(tKid(p).rod))} vidi ovaj razgovor</div>`
-     :esc(rodN(p))+`<div class="small muted" style="font-family:var(--body);font-weight:400">${esc(S.kids.filter(k=>k.rod===p).map(k=>k.ime).join(", "))} · ${esc(S.rod[p]?.tel||"")}</div>`);
-  return `${head}<div class="chat">${c.map(m=>{const d=new Date(m.t);return `<div class="msg ${m.f===me?"me":""}">${kt||ro?`<span class="who">${who(m)}</span>`:""}${m.img?`<img src="${m.img}" alt="Poslana fotografija">`:""}${m.x?esc(m.x):""}<time>${d.getDate()}.${d.getMonth()+1}. u ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}</time></div>`}).join("")||'<p class="muted small" style="text-align:center">Još nema poruka.</p>'}</div>
+     :esc(rodN(p))+`<div class="small muted" style="font-family:var(--body);font-weight:400">${esc(S.kids.filter(k=>k.rod===p).map(k=>k.ime).join(", "))} · ${esc(S.rod[p]?.tel||"")}</div>`)
+     .replace(/<\/div>$/,S.role==="admin"&&c.length?`<button class="btn ghost sm danger" onclick="askDelThread('${p}')">Obriši razgovor</button></div>`:"</div>");
+  return `${head}<div class="chat">${c.map(m=>{const d=new Date(m.t);const del=!ro&&canDelMsg(m);return `<div class="msg ${m.f===me?"me":""}${m.del?" gone":""}">${kt||ro?`<span class="who">${who(m)}</span>`:m.f==="staff"&&!m.mine&&m.autor&&stf(m.autor)?`<span class="who">${esc(first(stf(m.autor).ime))}</span>`:""}${m.del?"🚫 Poruka je obrisana":(m.img?`<img src="${m.img}" alt="Poslana fotografija">`:"")+(m.x?esc(m.x):"")}<time>${d.getDate()}.${d.getMonth()+1}. u ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}${del?`<button class="lnk" onclick="askDelMsg('${p}','${m.id}')" aria-label="Obriši poruku">Obriši</button>`:""}</time></div>`}).join("")||'<p class="muted small" style="text-align:center">Još nema poruka.</p>'}</div>
   ${ro?"":`<div style="height:56px"></div>
   <div class="composer"><div class="wrap"><label class="iconbtn" aria-label="Pošalji fotografiju" style="cursor:pointer">${I.img}<input type="file" accept="image/*" hidden onchange="sendImg(this,'${p}')"></label>
   <input id="msgIn" type="text" placeholder="Napišite poruku" onkeydown="if(event.key==='Enter')sendMsg('${p}')"><button class="iconbtn p" onclick="sendMsg('${p}')" aria-label="Pošalji">${I.send}</button></div></div>`}`;
 }
-function pushMsg(p,m,blob){const tmp=uid();(S.threads[p]=S.threads[p]||[]).push({f:myOd(),t:nowStamp(),tmp,...m});view.scrollEnd=true;render();sendToDb(p,{...m,tmp},blob)}
+function pushMsg(p,m,blob){const tmp=uid();m={...m,id:uid(),mine:true};(S.threads[p]=S.threads[p]||[]).push({f:myOd(),t:nowStamp(),tmp,...m});view.scrollEnd=true;render();sendToDb(p,{...m,tmp},blob)}
 function sendMsg(p){const v=$("#msgIn").value.trim();if(!v)return;pushMsg(p,{x:v})}
 function sendImg(inp,p){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{
   const s=Math.min(1,1280/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
@@ -1085,9 +1130,11 @@ function calScreen(){
   const card=e=>{const st=evStatus(e);let acts="";
     if(S.role==="clanica"){const k=curKid(),on=k&&e.prijave.includes(k.id);acts=on?chip("Prijavljena si","pk"):!canEnter(e,k)?chip("Samo za pozvane članice","n"):st.k==="open"?chip("Prijavu radi roditelj","n"):""}
     else if(S.role==="roditelj"){acts=myKids().map(k=>{const on=e.prijave.includes(k.id);if(!canEnter(e,k))return on?chip(first(k.ime)+" prijavljena","pk"):chip(first(k.ime)+": samo za pozvane članice","n");
-        if(st.k==="open")return `<button class="btn sm ${on?"ghost":""}" onclick="togPrijava('${e.id}','${k.id}')">${on?"✓ "+esc(first(k.ime))+" prijavljena · Odjavi":"Prijavi "+esc(first(k.ime))}</button>`;
+        const paid=on&&(e.placeno||[]).includes(k.id),kc=on&&e.kotizacija?chip(first(k.ime)+": kotizacija "+(paid?"plaćena ✓":"nije plaćena"),paid?"ok":"warn"):"";
+        if(st.k==="open"&&!paid)return `<button class="btn sm ${on?"ghost":""}" onclick="togPrijava('${e.id}','${k.id}')">${on?"✓ "+esc(first(k.ime))+" prijavljena · Odjavi":"Prijavi "+esc(first(k.ime))}</button>${kc}`;
+        if(on)return chip(first(k.ime)+" prijavljena","pk")+kc;
         return on?chip(first(k.ime)+" prijavljena","pk"):""}).join("")}
-    else acts=`${chip(e.pozvane?"Pozvane: "+clanica(e.pozvane.length):"Mogu sve članice",e.pozvane?"pk":"n")}<button class="btn ghost sm" onclick="prijaveForm('${e.id}')">Prijavljene (${e.prijave.length})</button>${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${e.id}')">Uredi</button>`:""}`;
+    else acts=`${chip(e.pozvane?"Pozvane: "+clanica(e.pozvane.length):"Mogu sve članice",e.pozvane?"pk":"n")}<button class="btn ghost sm" onclick="prijaveForm('${e.id}')">Prijavljene (${e.prijave.length})</button>${e.kotizacija&&e.prijave.length?`<button class="btn ghost sm" onclick="kotizForm('${e.id}')">💳 Kotizacije ${(e.placeno||[]).filter(k=>e.prijave.includes(k)).length}/${e.prijave.length}</button>`:""}${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${e.id}')">Uredi</button>`:""}`;
     if(st.k==="past")acts+=`<button class="btn sm" onclick="view={seg:'res',mode:'ev',ev:'${e.id}',sz:'${sez(e.datum)}'};render()">Rezultati</button>`;
     return `<div class="card ev">${dateBox(e)}<div class="grow"><h3>${esc(e.naziv)}</h3><div class="meta"><span>${esc(e.mjesto)}</span><span>Prijava do ${fd(e.prijavaDo)}</span><span>Kotizacija ${e.kotizacija?e.kotizacija+" KM":"–"}</span></div><div style="margin-top:6px">${st.h}</div><div class="acts">${acts}</div></div></div>`};
   return `<div class="sec-h"><h2>Kalendar takmičenja</h2>${S.role==="admin"?`<button class="btn sm" onclick="eventForm()">+ Dodaj</button>`:""}</div>
@@ -1164,7 +1211,16 @@ function prijaveForm(id){const e=S.events.find(x=>x.id===id);const ks=S.kids.fil
   sheet(`<h2>Prijavljene</h2><p class="muted small" style="margin:0">${esc(e.naziv)} · ${e.prijave.length} prijavljenih${e.kotizacija?` · ukupno kotizacija ${e.prijave.length*e.kotizacija} KM`:""}</p>
   <div class="list">${ks.map(k=>`<label class="li" style="cursor:pointer"><span class="av">${ini(k.ime)}</span><span class="grow"><b>${esc(k.ime)}</b><span class="small muted" style="display:block">${esc(grp(k.grupa)?.name||"")} · ${k.dob.slice(0,4)}</span></span><input type="checkbox" id="p_${k.id}" ${e.prijave.includes(k.id)?"checked":""} style="width:22px;height:22px;accent-color:var(--accent)"></label>`).join("")}</div>
   <button class="btn block" onclick="savePrijave('${id}')">Sačuvaj prijave</button>`)}
-function savePrijave(id){const e=S.events.find(x=>x.id===id);S.kids.forEach(k=>{const c=$("#p_"+k.id);if(!c)return;const i=e.prijave.indexOf(k.id);if(c.checked&&i<0)e.prijave.push(k.id);if(!c.checked&&i>=0)e.prijave.splice(i,1)});save();closeSheet();render();toast("Prijave sačuvane")}
+function kotizForm(id){const e=S.events.find(x=>x.id===id);e.placeno=e.placeno||[];
+  const ks=e.prijave.map(kid).filter(Boolean).sort((a,b)=>a.ime.localeCompare(b.ime,"bs"));const paid=ks.filter(k=>e.placeno.includes(k.id));
+  sheet(`<h2>Kotizacije</h2><p class="muted small" style="margin:0">${esc(e.naziv)} · ${e.kotizacija} KM po djetetu</p>
+  <div class="card"><div class="row" style="align-items:baseline"><span class="score" style="font-size:26px">${paid.length*e.kotizacija} KM</span><span class="muted">od ${ks.length*e.kotizacija} KM · platilo ${paid.length} od ${ks.length}</span></div>
+  <div class="bar"><div style="width:${ks.length?paid.length/ks.length*100:0}%"></div></div></div>
+  <p class="small muted" style="margin:0">Dodirnite dugme da označite ko je platio. Roditelj vidi status, ali ga ne može mijenjati.</p>
+  <div class="list">${ks.map(k=>{const on=e.placeno.includes(k.id);return `<div class="li"><span class="av">${ini(k.ime)}</span><span class="grow"><b>${esc(k.ime)}</b><span class="small muted" style="display:block">${esc(rodN(k.rod))}</span></span><button class="btn sm ${on?"":"ghost"}" style="${on?"background:var(--ok);color:#fff":""}" onclick="togKotiz('${id}','${k.id}')">${on?"✓ Plaćeno":"Nije plaćeno"}</button></div>`}).join("")||'<div class="li muted">Još niko nije prijavljen.</div>'}</div>
+  <button class="btn ghost block" onclick="closeSheet()">Zatvori</button>`)}
+function togKotiz(id,k){const e=S.events.find(x=>x.id===id);e.placeno=e.placeno||[];const i=e.placeno.indexOf(k);i>=0?e.placeno.splice(i,1):e.placeno.push(k);save();render();kotizForm(id)}
+function savePrijave(id){const e=S.events.find(x=>x.id===id);S.kids.forEach(k=>{const c=$("#p_"+k.id);if(!c)return;const i=e.prijave.indexOf(k.id);if(c.checked&&i<0)e.prijave.push(k.id);if(!c.checked&&i>=0)e.prijave.splice(i,1)});e.placeno=(e.placeno||[]).filter(k=>e.prijave.includes(k));save();closeSheet();render();toast("Prijave sačuvane")}
 function resForm(){const evs=S.events.filter(e=>days(e.datum)<=0).sort((a,b)=>b.datum.localeCompare(a.datum));
   if(!evs.length)return toast("Rezultati se unose nakon takmičenja");
   sheet(`<h2>Unesi rezultat</h2>
@@ -1187,6 +1243,7 @@ function saveRes(more){const o=parseFloat(String($("#rO").value).trim().replace(
 
 /* ---------- donji list (sheet) ---------- */
 function sheet(html){closeSheet();const s=document.createElement("div");s.className="scrim";s.innerHTML=`<div class="sheet" role="dialog" aria-modal="true"><button class="x" onclick="closeSheet()" aria-label="Zatvori">✕</button>${html}</div>`;s.onclick=e=>{if(e.target===s)s.remove()};document.body.appendChild(s);setTimeout(()=>s.querySelector("input:not([type=hidden]),select")?.focus({preventScroll:true}),50);return s}
+function ask(html,label,fn){window.__ask=fn;sheet(`<h2>Da li ste sigurni?</h2><p style="margin:0;line-height:1.5">${html}</p><button class="btn block" style="background:var(--bad);color:#fff" onclick="const f=window.__ask;window.__ask=null;closeSheet();f&&f()">${label}</button><button class="btn ghost block" onclick="closeSheet()">Odustani</button>`)}
 function closeSheet(){document.querySelector(".scrim")?.remove()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
 
