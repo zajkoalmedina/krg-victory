@@ -468,7 +468,32 @@ async function doForgot(){const e=$("#aM").value.trim().toLowerCase();if(!e)retu
   const r=await sb.auth.resetPasswordForEmail(e,{redirectTo:APP_URL});if(r.error)return aErr(authMsg(r.error));aOk("Ako račun postoji, poslali smo link na "+e+".");$("#aBtn").disabled=false}
 async function doReset(){const p=$("#aP").value;if(p.length<8)return aErr("Lozinka mora imati najmanje 8 znakova.");
   const r=await sb.auth.updateUser({password:p});if(r.error)return aErr(authMsg(r.error));recovery=false;toast("Lozinka je promijenjena");await afterLogin()}
-async function logout(){await sb.auth.signOut();PROFIL=null;base=null;S.role=null;tab=null;view={};render()}
+
+/* ---------- obavijesti na telefonu (Web Push) ---------- */
+const VAPID="BEnHCvE-P1kBGCuePiRvUadMSRCvl5MR2181Cw7N0ABy9vCMptws5OWlQpDITbSFdLPUpRZL0HCbOoFu22nYgd4";
+const pushOK=()=>"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window&&(location.protocol==="https:"||location.hostname==="localhost");
+const isIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const standalone=()=>matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+const lsG=k=>{try{return localStorage.getItem(k)||""}catch(e){return""}},lsS=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+function u8(b){const s=atob(b.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((b.length+3)%4));return Uint8Array.from(s,c=>c.charCodeAt(0))}
+async function pushSub(ask){if(!pushOK())return null;const reg=await navigator.serviceWorker.register("sw.js");await navigator.serviceWorker.ready;
+  let s=await reg.pushManager.getSubscription();if(!s){if(!ask)return null;s=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(VAPID)})}
+  const j=s.toJSON();const r=await sb.rpc("push_prijava",{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth,p_uredjaj:navigator.userAgent.slice(0,120)});if(r.error)throw r.error;return s}
+async function pushOn(){try{const p=await Notification.requestPermission();if(p!=="granted"){render();return toast("Obavijesti nisu dozvoljene.")}
+  await pushSub(true);lsS("krgv-push","1");render();toast("Obavijesti su uključene ✓")}catch(e){console.error(e);render();toast("Nije uspjelo: "+(e.message||e))}}
+function pushLater(){lsS("krgv-push-kasnije",iso(today()));render()}
+function pushCard(){
+  const later=lsG("krgv-push-kasnije");if(later&&days(later)>-7)return"";
+  const card=(b,btn)=>`<div class="card stack pushcard"><div class="row"><span class="av ic">🔔</span><div class="grow"><b>Obavijesti na telefonu</b><div class="small muted">${b}</div></div></div>${btn||""}<button class="lnk2 small" style="align-self:flex-start" onclick="pushLater()">Ne sada</button></div>`;
+  if(!("serviceWorker" in navigator)||(location.protocol!=="https:"&&location.hostname!=="localhost"))return"";
+  if(isIOS()&&!standalone())return card("Da vam nove poruke i obavijesti iskaču na ekranu, prvo dodajte aplikaciju na početni ekran: u Safariju dodirnite <b>Podijeli</b> (kvadrat sa strelicom) → <b>Dodaj na početni zaslon</b>. Zatim otvorite aplikaciju s ikonice i ovdje uključite obavijesti.");
+  if(!pushOK())return"";
+  if(Notification.permission==="granted"&&lsG("krgv-push")==="1")return"";
+  if(Notification.permission==="denied")return card(isIOS()?"Obavijesti su isključene. Uključite ih: <b>Postavke</b> telefona → <b>Obavijesti</b> → <b>Victory</b> → Dozvoli obavijesti.":"Obavijesti su blokirane. Dodirnite katanac (🔒) pored adrese ili otvorite postavke aplikacije → Obavijesti → Dozvoli.");
+  return card("Nova poruka od trenerice, obavijest kluba ili podsjetnik za članarinu iskočiće vam na ekranu, i kad je aplikacija zatvorena.",`<button class="btn block" onclick="pushOn()">Uključi obavijesti</button>`)}
+if("serviceWorker" in navigator)navigator.serviceWorker.addEventListener("message",e=>{if(!PROFIL)return;if(e.data?.go==="msg")loadAll().then(()=>go("msg")).catch(()=>go("msg"));else if(e.data?.go)loadAll().then(()=>{tab=null;view={};render()}).catch(()=>{})});
+function hashGo(){const h=location.hash;if(h!=="#poruke"&&h!=="#obavijesti")return;try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}if(h==="#poruke")go("msg")}
+async function logout(){try{if(pushOK()){const reg=await navigator.serviceWorker.getRegistration();const s=await reg?.pushManager.getSubscription();if(s)await sb.rpc("push_odjava",{p_endpoint:s.endpoint})}}catch(e){}await sb.auth.signOut();PROFIL=null;base=null;S.role=null;tab=null;view={};render()}
 
 async function afterLogin(){
   const u=(await sb.auth.getUser()).data?.user;if(!u){PROFIL=null;render();return}
@@ -481,7 +506,8 @@ async function afterLogin(){
   if((!PROFIL.ime||PROFIL.ime==="Administrator")&&md.ime){await sb.rpc("azuriraj_profil",{novo_ime:md.ime,novi_telefon:PROFIL.telefon||md.telefon||null});PROFIL.ime=md.ime}
   $("#app").innerHTML='<div class="wrap login"><img class="logo" src="logo.png" alt=""><p class="muted" style="text-align:center">Učitavam…</p></div>';
   try{await loadAll()}catch(e){console.error(e);toast(netMsg(e));$("#app").innerHTML=`<div class="wrap login"><div class="card stack"><b>Podaci se nisu učitali.</b><p class="small muted" style="margin:0">${esc(netMsg(e))}</p><button class="btn" onclick="afterLogin()">Pokušaj ponovo</button><button class="btn ghost" onclick="logout()">Odjava</button></div></div>`;return}
-  tab=null;view={};render();
+  tab=null;view={};render();hashGo();
+  if(pushOK()&&Notification.permission==="granted")pushSub(false).then(s=>{if(s)lsS("krgv-push","1")}).catch(e=>console.warn("push",e));
   // rezerva za podsjetnike: jednom dnevno kad administrator otvori aplikaciju
   if(S.role==="admin"&&S.cfg.podsj?.on){let last="";try{last=localStorage.getItem("krgv-podsj")||""}catch(x){}
     if(last!==iso(today())){try{localStorage.setItem("krgv-podsj",iso(today()))}catch(x){}runRem(false)}}
@@ -743,6 +769,7 @@ function adminHome(){
   const nx=S.events.filter(e=>days(e.datumDo||e.datum)>=0).sort((a,b)=>a.datum.localeCompare(b.datum))[0];
   const tiles=[[act.length,"Aktivne članice","go('members')",""],[activeGroups().length,"Trening grupe","go('more',{s:'groups'})",""],[paid,"Plaćeno","go('pay',{f:'placeno'})","ok"],[unp,"Nije plaćeno","go('pay',{f:'neplaceno'})","bad"],[ceka,"Čeka potvrdu","go('pay',{f:'ceka'})","warn"],[unread(),"Nove poruke","go('msg')","pk"]];
   return `<div class="hero"><img src="${LOGO}" alt=""><div><div class="eyebrow">Sezona ${curSez()}</div><h1>Dobro došli!</h1><div class="small muted">${DAN[dIdx(iso(today()))]}, ${fd(iso(today()))}</div></div></div>
+  ${pushCard()}
   <div class="card"><div class="eyebrow">Članarine · ${ymL(m)}</div><div class="row" style="margin-top:4px;align-items:baseline"><span class="score" style="font-size:30px">${col} KM</span><span class="muted">od ${exp} KM</span></div>
   <div class="bar"><div style="width:${exp?Math.min(100,col/exp*100):0}%"></div></div></div>
   <div class="tiles">${tiles.map(([v,l,c,cl])=>`<button class="tile ${cl}" onclick="${c}"><b>${v}</b><span>${l}</span></button>`).join("")}</div>
@@ -1121,6 +1148,7 @@ function parentHome(){
   const ev=S.events.filter(e=>days(e.datumDo||e.datum)>=0&&(e.prijave.includes(k.id)||(e.pozvane&&e.pozvane.includes(k.id))||(!e.pozvane&&evStatus(e).k==="open"))).sort((a,b)=>a.datum.localeCompare(b.datum))[0];
   const lr=S.results.filter(r=>r.kidId===k.id).sort((a,b)=>S.events.find(e=>e.id===b.eventId).datum.localeCompare(S.events.find(e=>e.id===a.eventId).datum))[0];
   return `<div class="hero"><img src="${LOGO}" alt=""><div><div class="eyebrow">KRG Victory Hadžići</div><h1>Zdravo, ${esc(first(cl?k.ime:rodN(PARENT)))}!</h1><div class="small muted">Sezona ${curSez()}</div></div></div>
+  ${pushCard()}
   ${kidSwitch()}
   <div class="card"><div class="row"><span class="av big">${ini(k.ime)}</span><div class="grow"><h3 style="font-size:19px">${esc(k.ime)}</h3><div class="small muted">${esc(g?.name||"")} · ${esc(trnL(g))}</div></div></div>
   ${nx?`<div class="next"><span class="eyebrow">Sljedeći trening</span><b>${DAN[dIdx(nx.date)]}, ${fd(nx.date)} · ${nx.od}–${nx.do}</b><span class="small muted">${esc(lokN(nx.loc))}</span>${nx.z?`<span class="chip warn">Promjena termina</span>`:""}</div>`:""}</div>
@@ -1389,7 +1417,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
 
 
 boot();
-if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
 </html>
