@@ -280,6 +280,21 @@ table.rep{font-size:12px;white-space:nowrap}table.rep td,table.rep th{padding:6p
 .offline{background:var(--bad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:5px 12px}
 .login form.card{display:flex;flex-direction:column;gap:12px}
 </style>
+<style>
+.mustov{position:fixed;inset:0;z-index:9999;background:rgba(42,26,36,.82);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;animation:mfade .25s}
+@keyframes mfade{from{opacity:0}}
+.mustsheet{background:var(--surface);color:var(--fg);width:100%;max-width:560px;max-height:92vh;max-height:92dvh;border-radius:24px 24px 0 0;display:flex;flex-direction:column;animation:mup .35s cubic-bezier(.2,.9,.3,1);padding-bottom:env(safe-area-inset-bottom,0)}
+@keyframes mup{from{transform:translateY(100%)}}
+.musthead{padding:18px 18px 10px;border-bottom:1px solid var(--line)}
+.musthead h2{font-size:20px;line-height:1.25;margin:8px 0 2px}
+.musttag{display:inline-block;background:var(--pink-soft);color:var(--accent);font-weight:800;font-size:11px;padding:4px 10px;border-radius:12px}
+.mustbody{overflow:auto;padding:14px 18px;font-size:15px;line-height:1.55;white-space:pre-wrap;flex:1;min-height:80px;-webkit-overflow-scrolling:touch}
+.mustfoot{padding:12px 18px 18px;border-top:1px solid var(--line)}
+.shake{animation:mshake .35s}@keyframes mshake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.toast{z-index:10000}
+.offline{background:var(--bad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:5px 12px}
+.login form.card{display:flex;flex-direction:column;gap:12px}
+</style>
 
 </head>
 <body>
@@ -317,6 +332,7 @@ async function loadAll(){
   const [lok,cij,post,prof,grupe,gtr,term,clan,dod,upl,pris,izm,obv,tak,prij,rez,por,proc,poz]=await Promise.all([
     T("lokacije"),T("cijene"),T("postavke"),T("profili"),T("grupe"),T("grupe_treneri").catch(()=>[]),T("termini"),T("clanice"),T("clanice_dodatne"),T("uplate"),T("prisustvo"),
     T("izmjene"),T("obavijesti"),T("takmicenja"),T("prijave"),T("rezultati"),q(sb.from("poruke").select("*").order("vrijeme")),T("procitano"),isAdm?T("pozivnice"):Promise.resolve([])]);
+  const potv=await T("obavijesti_potvrde").catch(()=>[]);
   const [nap,gal]=await Promise.all([isAdm?T("clanice_napomene").catch(()=>[]):Promise.resolve([]),q(sb.from("galerija").select("*").order("napravljeno",{ascending:false})).catch(()=>[])]);
   const n={role:PROFIL.uloga==="trener"?"trener":PROFIL.uloga,me:PROFIL.id,meKid:PROFIL.clanica_id};
   n.lok=lok.map(l=>({id:l.id,name:l.naziv})).sort((a,b)=>a.name.localeCompare(b.name,"bs"));
@@ -339,7 +355,8 @@ async function loadAll(){
   n.pay={};upl.forEach(u=>{(n.pay[u.clanica_id]=n.pay[u.clanica_id]||{})[u.mjesec.slice(0,7)]={s:u.status,paid:+u.uplaceno||0,d:u.datum||undefined}});
   n.att={};pris.forEach(p=>{(n.att[p.datum+"|"+p.grupa_id]=n.att[p.datum+"|"+p.grupa_id]||{})[p.clanica_id]=p.stanje});
   n.izmjene=izm.map(z=>({id:z.id,g:z.grupa_id,date:z.datum,type:z.tip,od:t5(z.od),do:t5(z.do),locId:z.lokacija_id,note:z.napomena||""}));
-  n.notices=obv.map(o=>({id:o.id,kind:o.vrsta,title:o.naslov,body:o.tekst||"",d:iso(new Date(o.napravljeno)),from:o.autor_id,tgt:cilj2tgt(o.cilj),ts:o.napravljeno})).sort((a,b)=>b.ts.localeCompare(a.ts));
+  n.potv={};potv.forEach(r=>{(n.potv[r.obavijest_id]=n.potv[r.obavijest_id]||{})[r.korisnik_id]=r.potvrdjeno||new Date().toISOString()});
+  n.notices=obv.map(o=>({id:o.id,kind:o.vrsta,title:o.naslov,body:o.tekst||"",d:iso(new Date(o.napravljeno)),from:o.autor_id,tgt:cilj2tgt(o.cilj),ts:o.napravljeno,must:!!o.obavezna,btn:o.dugme||null})).sort((a,b)=>b.ts.localeCompare(a.ts));
   n.events=tak.map(e=>({id:e.id,naziv:e.naziv,mjesto:e.mjesto||"",datum:e.datum,datumDo:e.datum_do||undefined,prijavaDo:e.prijava_do,kotizacija:+e.kotizacija||0,kotizacijaGrupa:+e.kotizacija_grupa||0,organizator:e.organizator||"",nastupi:e.nastupi||{},pozvane:e.pozvane||null,
     prijave:prij.filter(p=>p.takmicenje_id===e.id&&(p.status||"ide")==="ide").map(p=>p.clanica_id),neIde:prij.filter(p=>p.takmicenje_id===e.id&&p.status==="ne_ide").map(p=>p.clanica_id),placeno:prij.filter(p=>p.takmicenje_id===e.id&&p.kotizacija_placena).map(p=>p.clanica_id),
     placenoDat:Object.fromEntries(prij.filter(p=>p.takmicenje_id===e.id&&p.kotizacija_placena&&p.kotizacija_datum).map(p=>[p.clanica_id,p.kotizacija_datum]))}));
@@ -389,7 +406,7 @@ function rowsFromS(){
     e.prijave.forEach(k=>row(k,"ide"));(e.neIde||[]).forEach(k=>{if(!e.prijave.includes(k))row(k,"ne_ide")});
     (e.placeno||[]).forEach(k=>{if(!e.prijave.includes(k)&&!(e.neIde||[]).includes(k))row(k,"ceka")})});
   S.results.forEach(r=>put("rezultati",r.id,{id:r.id,takmicenje_id:r.eventId,clanica_id:r.kidId,kategorija:r.kategorija,rekvizit:r.rekvizit,ocjena:r.ocjena,plasman:r.plasman}));
-  S.notices.forEach(n=>put("obavijesti",n.id,{id:n.id,vrsta:n.kind,naslov:n.title,tekst:n.body||null,cilj:tgt2cilj(n.tgt),autor_id:n.from}));
+  S.notices.forEach(n=>put("obavijesti",n.id,{id:n.id,vrsta:n.kind,naslov:n.title,tekst:n.body||null,cilj:tgt2cilj(n.tgt),autor_id:n.from,...(n.must||n.btn?{obavezna:!!n.must,dugme:n.btn||null}:{})}));
   return T;
 }
 const PK={grupe_treneri:["grupa_id","trener_id"],termini:["grupa_id","dan"],clanice_dodatne:["clanica_id","grupa_id"],uplate:["clanica_id","mjesec"],prisustvo:["datum","grupa_id","clanica_id"],prijave:["takmicenje_id","clanica_id"],pozivnice:["email"],clanice_napomene:["clanica_id"]};
@@ -779,6 +796,7 @@ const TABS={
 function render(){
   const app=$("#app");
   if(!PROFIL||!S.role){app.innerHTML=authView();return}
+  setTimeout(mustCheck,60);
   if(!tab)tab=TABS[S.role][0][0];
   const u=unread();
   const who=(S.role==="roditelj"?"Roditelj · ":S.role==="clanica"?"Članica · ":S.role==="admin"?"Administrator · ":"Trenerica · ")+(PROFIL.ime||PROFIL.email);
@@ -955,9 +973,9 @@ function remind(id,m){const k=kid(id),p=payOf(id,m),owed=kidFee(k)-(p.s==="djeli
 screens.more=()=>{
   const s=view.s;
   if(s==="groups")return groupsScreen();if(s==="locs")return locsScreen();if(s==="oneoff")return oneOffScreen();
-  if(s==="acc")return accScreen();if(s==="inv")return invScreen();
+  if(s==="obv")return obvScreen();if(s==="acc")return accScreen();if(s==="inv")return invScreen();
   if(s==="export")return exportScreen();if(s==="stats")return statsScreen();if(s==="staff")return staffScreen();if(s==="prices")return pricesScreen();if(s==="seasons")return seasonsScreen();if(s==="att")return screens.att();
-  const rows=[["groups","Trening grupe i raspored",`${activeGroups().length} grupa · termini po danima`,I.cal],["locs","Lokacije (škole i sale)",`${S.lok.length} lokacija`,I.pin],["oneoff","Jednokratna promjena termina","Pomjeren ili otkazan trening, druga lokacija",I.swap],["att","Evidencija dolazaka","Prisustvo po grupama",I.check],["staff","Treneri i administratori",`${S.staff.filter(x=>x.uloga==="admin").length} admin. · ${S.staff.filter(x=>x.uloga==="trener").length} trenerice`,I.shield],["prices","Cjenovnik članarina","Iznosi i popusti za sestre",I.tag],["seasons","Sezone i arhiva","Takmičenja i rezultati po sezonama",I.archive],["res","Rezultati takmičenja","Po takmičenju i po djetetu",I.trophy],["gal","Galerija","Slike sa takmičenja i videi s treninga",I.img],["inv","Pozivnice","Roditelji, članice i treneri",I.send],["acc","Svi korisnički računi","Pristup i nove lozinke",I.users],["stats","Statistika kluba","Članice, prisustvo, naplata, medalje",I.chart],["export","Izvoz izvještaja u Excel","Članice, uplate, prisustvo, rezultati",I.down],["me","Moj profil","Ime, telefon, lozinka",I.lock]];
+  const rows=[["groups","Trening grupe i raspored",`${activeGroups().length} grupa · termini po danima`,I.cal],["locs","Lokacije (škole i sale)",`${S.lok.length} lokacija`,I.pin],["oneoff","Jednokratna promjena termina","Pomjeren ili otkazan trening, druga lokacija",I.swap],["att","Evidencija dolazaka","Prisustvo po grupama",I.check],["staff","Treneri i administratori",`${S.staff.filter(x=>x.uloga==="admin").length} admin. · ${S.staff.filter(x=>x.uloga==="trener").length} trenerice`,I.shield],["prices","Cjenovnik članarina","Iznosi i popusti za sestre",I.tag],["seasons","Sezone i arhiva","Takmičenja i rezultati po sezonama",I.archive],["res","Rezultati takmičenja","Po takmičenju i po djetetu",I.trophy],["obv","Obavijesti","Obavezne obavijesti i ko je potvrdio",I.bell],["gal","Galerija","Slike sa takmičenja i videi s treninga",I.img],["inv","Pozivnice","Roditelji, članice i treneri",I.send],["acc","Svi korisnički računi","Pristup i nove lozinke",I.users],["stats","Statistika kluba","Članice, prisustvo, naplata, medalje",I.chart],["export","Izvoz izvještaja u Excel","Članice, uplate, prisustvo, rezultati",I.down],["me","Moj profil","Ime, telefon, lozinka",I.lock]];
   return `<h2>Više</h2><div class="card"><div class="list">${rows.map(([k,l,d,ic])=>li(ic,l,d,"",{res:"go('comp',{seg:'res',sz:curSez()})",gal:"go('gal')",me:"myProfile()"}[k]||`sub({s:'${k}'})`,"ic")).join("")}</div></div>
 `;
 };
@@ -1211,7 +1229,7 @@ function parentHome(){
   ${noticesFor(famRod()).slice(0,4).map(noticeCard).join("")}`;
 }
 function recCount(t){if(t.startsWith("ev:")){const e=S.events.find(x=>x.id===t.slice(3));return e?evParents(e).size:0}if(t==="all")return new Set(S.kids.filter(k=>k.status==="aktivna").map(k=>k.rod)).size;if(grp(t))return new Set(groupKids(t).map(k=>k.rod)).size;return 1}
-function noticeCard(n){return `<div class="card"><div class="row"><span class="chip ${/Otkazan|Promjena/.test(n.kind)?"warn":n.kind==="Članarina"?"bad":"pk"}">${esc(n.kind)}</span><span class="small muted grow" style="text-align:right">${fd(n.d)}</span>${S.role==="admin"?`<button class="btn ghost sm danger" onclick="askDelNotice('${n.id}')">Obriši</button>`:""}</div><h3 style="font-size:17px;margin-top:6px">${esc(n.title)}</h3><p style="margin:4px 0 0;white-space:pre-line">${esc(n.body)}</p><div class="small muted" style="margin-top:6px">${esc(stf(n.from)?.ime||"Uprava kluba")}${isStaff()?` · Za: ${esc(tgtLabel(n.tgt))} · pojedinačno ${recCount(n.tgt)} ${recCount(n.tgt)===1?"roditelj":"roditelja"}`:""}</div></div>`}
+function noticeCard(n){return `<div class="card"><div class="row"><span class="chip ${/Otkazan|Promjena/.test(n.kind)?"warn":n.kind==="Članarina"?"bad":"pk"}">${esc(n.kind)}</span><span class="small muted grow" style="text-align:right">${fd(n.d)}</span>${S.role==="admin"?`<button class="btn ghost sm danger" onclick="askDelNotice('${n.id}')">Obriši</button>`:""}</div><h3 style="font-size:17px;margin-top:6px">${n.must?"🔒 ":""}${esc(n.title)}</h3><p style="margin:4px 0 0;white-space:pre-line">${esc(n.body)}</p>${obvStatus(n)}<div class="small muted" style="margin-top:6px">${esc(stf(n.from)?.ime||"Uprava kluba")}${isStaff()?` · Za: ${esc(tgtLabel(n.tgt))} · pojedinačno ${recCount(n.tgt)} ${recCount(n.tgt)===1?"roditelj":"roditelja"}`:""}</div></div>`}
 screens.sched=()=>{
   const k=curKid();if(!k)return"";
   const gs=[k.grupa,...(k.dod||[])].map(grp).filter(Boolean);
@@ -1283,11 +1301,16 @@ function noticeForm(tgt){const gs=myGroups();
   <p id="nCnt" class="small muted" style="margin:0"></p>
   <label class="f">Vrsta<select id="nK">${["Obavijest","Raspored","Takmičenje","Članarina","Oprema","Raspust"].map(x=>`<option>${x}</option>`).join("")}</select></label>
   <label class="f">Naslov<input id="nT"></label><label class="f">Tekst obavijesti<textarea id="nB" rows="5"></textarea></label>
+  ${S.role==="admin"?`<label class="f">Dugme za potvrdu<select id="nBtn" onchange="if(this.value==='')$('#nMust').checked=false"><option value="">Bez potvrde (obična obavijest)</option><option value="procitao">„Pročitao/la sam”</option><option value="slazem">„Slažem se” (uz kvačicu)</option></select></label>
+  <label class="checkrow sisrow"><input type="checkbox" id="nMust" onchange="if(this.checked&&!$('#nBtn').value)$('#nBtn').value='procitao'"> <span><b>Obavezna</b> – roditelju iskoči preko cijelog ekrana i ne može dalje dok je ne potvrdi</span></label>`:""}
   <p id="fErr" class="err" hidden></p>
   <button class="btn block" onclick="saveNotice()">Pošalji obavijest</button>`);nCount()}
 function nCount(){const t=$("#nTg").value;let ps;if(t==="all")ps=new Set(S.kids.filter(k=>k.status==="aktivna").map(k=>k.rod));else if(grp(t))ps=new Set(groupKids(t).map(k=>k.rod));else ps=new Set([t]);
   $("#nCnt").textContent=`Dobija ${ps.size} ${ps.size===1?"roditelj":"roditelja"}, svaki pojedinačno.`}
-function saveNotice(){const t=$("#nT").value.trim();if(!t)return ferr("Upišite naslov.");S.notices.unshift({id:uid(),kind:$("#nK").value,title:t,body:$("#nB").value.trim(),d:iso(today()),from:S.me,tgt:$("#nTg").value});save();closeSheet();go("msg",{seg:"obv"});toast("Obavijest poslana")}
+function saveNotice(){const t=$("#nT").value.trim();if(!t)return ferr("Upišite naslov.");const btn=$("#nBtn")?.value||null,must=!!$("#nMust")?.checked;
+  if(must&&!$("#nB").value.trim())return ferr("Obavezna obavijest mora imati tekst.");
+  S.notices.unshift({id:uid(),kind:$("#nK").value,title:t,body:$("#nB").value.trim(),d:iso(today()),from:S.me,tgt:$("#nTg").value,btn,must,ts:new Date().toISOString()});save();closeSheet();
+  if(btn&&S.role==="admin")go("more",{s:"obv"});else go("msg",{seg:"obv"});toast(must?"Obavezna obavijest poslana 🔒":"Obavijest poslana")}
 
 /* ================= TAKMIČENJA: kalendar + rezultati ================= */
 function evStatus(e){const end=e.datumDo||e.datum;
@@ -1678,6 +1701,63 @@ async function galSend(){const fs=[...($("#gF").files||[])];if(!fs.length)return
     S.notices.unshift({id:uid(),kind:"Obavijest",title:"📷 Nove slike u galeriji"+(album?": "+album:""),body:`Dodano: ${[nS?nS+(nS===1?" slika":" slika"):"",nV?nV+(nV===1?" video":" videa"):""].filter(Boolean).join(" i ")}.\nPogledajte u aplikaciji: Početna → Galerija.`,d:iso(today()),from:S.me,tgt:tgt});save()}
   if(!ok){$("#gB").disabled=false;$("#gP").textContent="";return ferr(errs?"Slanje nije uspjelo. Provjerite internet (ili da je pokrenut novi SQL) pa pokušajte ponovo.":"")}
   closeSheet();go("gal");toast(`Dodano u galeriju: ${ok}${errs?` (nije uspjelo: ${errs})`:""}`)}
+
+/* ================= OBAVEZNE OBAVIJESTI ================= */
+const potvOf=(n,u)=>(S.potv&&S.potv[n.id]||{})[u];
+const fdt=t=>{const d=new Date(t),z=x=>String(x).padStart(2,"0");return `${z(d.getDate())}.${z(d.getMonth()+1)}.${d.getFullYear()}. u ${z(d.getHours())}:${z(d.getMinutes())}`};
+// roditelji (s računom) koji trebaju potvrditi obavijest
+function obvRecip(n){let ks=[];const t=n.tgt;
+  if(t==="all")ks=S.kids.filter(k=>k.status==="aktivna");else if(grp(t))ks=groupKids(t);
+  else if(t.startsWith("ev:")){const e=S.events.find(x=>x.id===t.slice(3));return e?[...evParents(e)].filter(p=>p&&!p.startsWith("e:")):[]}
+  else return t&&!t.startsWith("e:")?[t]:[];
+  const ids=new Set();ks.forEach(k=>{[k.rod,k.rod2].forEach(r=>{if(r&&!r.startsWith("e:"))ids.add(r)})});return [...ids]}
+function obvStatus(n){if(!n.btn)return"";
+  if(S.role==="roditelj"){const t=potvOf(n,S.me);return `<div class="row" style="margin-top:8px;gap:8px">${t?chip("Potvrđeno ✓ "+fdt(t),"ok"):`${chip("Nova","warn")}<button class="btn sm" onclick="mustShow('${n.id}')">Pročitaj i potvrdi</button>`}</div>`}
+  if(S.role==="admin"){const r=obvRecip(n),c=r.filter(u=>potvOf(n,u)).length;return `<div style="margin-top:8px"><div class="bar thin"><div style="width:${r.length?c/r.length*100:0}%;background:var(--accent)"></div></div><div class="row" style="margin-top:4px"><span class="small grow"><b>${c} od ${r.length}</b> potvrdilo${n.must?" · 🔒 obavezna":""}</span><button class="lnk2 small" onclick="obvWho('${n.id}')">Ko je potvrdio</button></div></div>`}
+  return ""}
+/* --- roditelj: obavijest preko cijelog ekrana --- */
+let MUST=null;
+function mustList(){if(S.role!=="roditelj"||!PROFIL)return[];return noticesFor(famRod()).filter(n=>n.must&&n.btn&&!potvOf(n,S.me)).sort((a,b)=>(a.ts||a.d).localeCompare(b.ts||b.d))}
+function mustCheck(){if(MUST||document.getElementById("mustOv"))return;const l=mustList();if(l.length)mustShow(l[0].id)}
+function mustShow(id){const n=S.notices.find(x=>x.id===id);if(!n)return;MUST={id,end:false};const l=mustList(),pos=l.findIndex(x=>x.id===id);
+  document.getElementById("mustOv")?.remove();const ov=document.createElement("div");ov.id="mustOv";ov.className="mustov";
+  ov.innerHTML=`<div class="mustsheet" id="mustSh" role="dialog" aria-modal="true" aria-labelledby="mustT">
+    <div class="musthead"><div class="row"><span class="musttag">${n.must?"⚠️ OBAVEZNO PROČITATI":"📢 OBAVIJEST"}</span>${l.length>1&&pos>=0?`<span class="small muted grow" style="text-align:right">${pos+1} od ${l.length}</span>`:""}</div>
+      <h2 id="mustT">${esc(n.title)}</h2><div class="small muted">Objavljeno: ${fdz(n.d)} · ${esc(stf(n.from)?.ime||"Uprava kluba")}</div></div>
+    <div class="mustbody" id="mustB">${esc(n.body)}</div>
+    <div class="mustfoot"><p class="small muted" id="mustN" style="text-align:center;margin:0 0 8px"></p>
+      ${n.btn==="slazem"?`<label class="checkrow" style="align-items:flex-start;margin-bottom:10px"><input type="checkbox" id="mustC" onchange="mustUpd()"> <span>Pročitala sam obavijest i slažem se s navedenim.</span></label>`:""}
+      <button class="btn block" id="mustBtn" disabled onclick="mustConfirm()" style="padding:14px;font-size:16px">${n.btn==="slazem"?"✅ Slažem se":"✅ Pročitao/la sam"}</button>
+      ${n.must?"":`<button class="btn ghost block" style="margin-top:8px" onclick="mustClose()">Kasnije</button>`}</div></div>`;
+  document.body.appendChild(ov);document.body.style.overflow="hidden";
+  ov.addEventListener("click",e=>{if(e.target===ov){if(!n.must)return mustClose();const s=$("#mustSh");s.classList.remove("shake");void s.offsetWidth;s.classList.add("shake");toast("Prvo pročitajte i potvrdite obavijest")}});
+  const b=$("#mustB");b.addEventListener("scroll",()=>{if(b.scrollTop+b.clientHeight>=b.scrollHeight-10){MUST.end=true;mustUpd()}});
+  setTimeout(()=>{if(b.scrollHeight<=b.clientHeight+10)MUST.end=true;mustUpd()},80)}
+function mustUpd(){if(!MUST)return;const n=S.notices.find(x=>x.id===MUST.id),c=$("#mustC");const ok=MUST.end&&(n.btn!=="slazem"||c?.checked);
+  $("#mustBtn").disabled=!ok;$("#mustN").textContent=!MUST.end?"⬇️ Skrolajte do kraja da možete potvrditi":(n.btn==="slazem"&&!c?.checked?"☑️ Označite kvačicu da potvrdite":"Spremno – dodirnite dugme")}
+function mustClose(){document.getElementById("mustOv")?.remove();document.body.style.overflow="";MUST=null}
+async function mustConfirm(){if(!MUST)return;const id=MUST.id;$("#mustBtn").disabled=true;
+  const r=await sb.from("obavijesti_potvrde").insert({obavijest_id:id,korisnik_id:S.me});
+  if(r.error&&!/duplicate|23505/.test(r.error.message||"")){$("#mustBtn").disabled=false;return toast("Nije sačuvano, provjerite internet i pokušajte ponovo.")}
+  S.potv=S.potv||{};(S.potv[id]=S.potv[id]||{})[S.me]=new Date().toISOString();
+  mustClose();render();toast("✓ Potvrđeno – hvala!")}
+/* --- admin: obavijesti i ko je potvrdio --- */
+function obvScreen(){const xs=S.notices.slice().sort((a,b)=>(b.ts||b.d).localeCompare(a.ts||a.d));
+  return `${backBar("Obavijesti")}
+  <p class="small muted" style="margin:0">Obavezna obavijest iskoči roditelju preko cijelog ekrana čim otvori aplikaciju i ne može dalje dok je ne pročita do kraja i potvrdi. Ovdje vidite ko je potvrdio i kada.</p>
+  <button class="btn block" onclick="noticeForm('all')">${I.plus} Nova obavijest</button>
+  ${xs.map(n=>`<div class="card"><div class="row"><span class="small" style="font-weight:800;color:var(--accent)">${n.must?"🔒 OBAVEZNA":n.btn?"S POTVRDOM":"OBIČNA"}${n.btn?` · ${n.btn==="slazem"?"„Slažem se”":"„Pročitao/la sam”"}`:""}</span><span class="small muted grow" style="text-align:right">${fd(n.d)}</span></div>
+    <h3 style="margin-top:4px">${esc(n.title)}</h3><div class="small muted">Za: ${esc(tgtLabel(n.tgt))}</div>${obvStatus(n)}
+    <div class="acts"><button class="btn ghost sm danger" onclick="askDelNotice('${n.id}')">Obriši</button></div></div>`).join("")||'<div class="card muted">Još nema obavijesti.</div>'}`}
+function obvWho(id){const n=S.notices.find(x=>x.id===id),r=obvRecip(n);
+  const row=u=>{const t=potvOf(n,u),ks=S.kids.filter(k=>isRod(k,u)&&k.status!=="ispisana").map(k=>first(k.ime)).join(" i ");
+    return {t,h:`<div class="li"><span class="av">${ini(rodN(u))}</span><div class="grow"><b>${esc(rodN(u))}</b>${ks?` <span class="small muted">· ${esc(ks)}</span>`:""}<div class="small ${t?"":"muted"}" style="${t?"color:var(--ok);font-weight:700":""}">${t?"Potvrđeno "+fdt(t):"Još nije potvrdio/la"}</div></div>${t?chip("✓","ok"):chip("Čeka","warn")}</div>`}};
+  const rows=r.map(row),yes=rows.filter(x=>x.t).sort((a,b)=>a.t.localeCompare(b.t)),no=rows.filter(x=>!x.t);
+  sheet(`<h2>${esc(n.title)}</h2><p class="small muted" style="margin:0">${n.must?"🔒 Obavezna · ":""}Za: ${esc(tgtLabel(n.tgt))}</p>
+  <div class="bar"><div style="width:${r.length?yes.length/r.length*100:0}%;background:var(--accent)"></div></div><p style="margin:0"><b>${yes.length} od ${r.length}</b> roditelja potvrdilo</p>
+  ${no.length?`<div class="eyebrow">Još nisu potvrdili (${no.length})</div><div class="list">${no.map(x=>x.h).join("")}</div>`:""}
+  ${yes.length?`<div class="eyebrow">Potvrdili (${yes.length})</div><div class="list">${yes.map(x=>x.h).join("")}</div>`:""}
+  <p class="small muted" style="margin:0">Roditelji koji još nisu napravili račun nisu na spisku.</p>`)}
 
 boot();
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))navigator.serviceWorker.register("sw.js").catch(()=>{});
