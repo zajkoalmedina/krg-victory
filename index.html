@@ -784,7 +784,7 @@ function unread(){if(isFam()){const p=myThread();return(S.threads[p]||[]).filter
   return threadKeys().reduce((a,p)=>a+unreadFor(p),0)}
 function noticesFor(p){const ks=S.role==="clanica"?myKids():S.kids.filter(k=>isRod(k,p));const gs=ks.flatMap(k=>[k.grupa,...(k.dod||[])]);const own=new Set([p,...ks.map(k=>k.rod)]);
   return S.notices.filter(n=>n.tgt==="all"||(own.has(n.tgt)&&S.role!=="clanica")||gs.includes(n.tgt)||(n.tgt.startsWith("ev:")&&(()=>{const e=S.events.find(x=>x.id===n.tgt.slice(3));return e&&ks.some(k=>canEnter(e,k))})())).sort((a,b)=>b.d.localeCompare(a.d))}
-const tgtLabel=t=>t.startsWith("ev:")?"Roditelji pozvanih članica":t==="all"?"Svi roditelji":grp(t)?"Grupa "+grp(t).name:S.rod[t]?rodN(t):"–";
+const tgtLabel=t=>t.startsWith("ev:")?(e=>e?`Takmičenje ${e.naziv}: roditelji ${e.pozvane?"planiranih":"svih"} članica`:"Roditelji pozvanih članica")(S.events.find(x=>x.id===t.slice(3))):t==="all"?"Svi roditelji":grp(t)?"Grupa "+grp(t).name:S.rod[t]?rodN(t):"–";
 
 /* ---------- školjka ---------- */
 const TABS={
@@ -1295,7 +1295,8 @@ function sendImg(inp,p){const f=inp.files[0];if(!f)return;const r=new FileReader
   const s=Math.min(1,1280/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
   c.toBlob(b=>{if(!b)return toast("Fotografija se ne može otvoriti.");pushMsg(p,{img:URL.createObjectURL(b)},b)},"image/jpeg",.8)};im.onerror=()=>toast("Fotografija se ne može otvoriti.");im.src=r.result};r.readAsDataURL(f)}
 function noticeForm(tgt){const gs=myGroups();
-  const opts=(S.role==="admin"?[["all","Svi roditelji"]]:[]).concat(gs.map(g=>[g.id,"Grupa "+g.name])).concat(threadParents().map(p=>[p,rodN(p)]));
+  const evs=S.events.filter(e=>days(e.datumDo||e.datum)>=0).sort((a,b)=>a.datum.localeCompare(b.datum));
+  const opts=(S.role==="admin"?[["all","Svi roditelji"]]:[]).concat(gs.map(g=>[g.id,"Grupa "+g.name])).concat(evs.map(e=>["ev:"+e.id,`🏆 ${e.naziv} (${fd(e.datum)}) – ${e.pozvane?"planirane":"sve"} članice`])).concat(threadParents().map(p=>[p,rodN(p)]));
   sheet(`<h2>Nova obavijest</h2>
   <label class="f">Kome šaljete<select id="nTg" onchange="nCount()">${opts.map(([v,l])=>`<option value="${v}" ${v===tgt?"selected":""}>${esc(l)}</option>`).join("")}</select></label>
   <p id="nCnt" class="small muted" style="margin:0"></p>
@@ -1305,7 +1306,10 @@ function noticeForm(tgt){const gs=myGroups();
   <label class="checkrow sisrow"><input type="checkbox" id="nMust" onchange="if(this.checked&&!$('#nBtn').value)$('#nBtn').value='procitao'"> <span><b>Obavezna</b> – roditelju iskoči preko cijelog ekrana i ne može dalje dok je ne potvrdi</span></label>`:""}
   <p id="fErr" class="err" hidden></p>
   <button class="btn block" onclick="saveNotice()">Pošalji obavijest</button>`);nCount()}
-function nCount(){const t=$("#nTg").value;let ps;if(t==="all")ps=new Set(S.kids.filter(k=>k.status==="aktivna").map(k=>k.rod));else if(grp(t))ps=new Set(groupKids(t).map(k=>k.rod));else ps=new Set([t]);
+function nCount(){const t=$("#nTg").value;let ps;
+  if(t.startsWith("ev:")){const e=S.events.find(x=>x.id===t.slice(3)),ks=S.kids.filter(k=>k.status==="aktivna"&&canEnter(e,k)).sort((a,b)=>a.ime.localeCompare(b.ime,"bs"));ps=new Set(ks.map(k=>k.rod).filter(Boolean));
+    $("#nCnt").innerHTML=`Dobija <b>${ps.size} ${ps.size===1?"roditelj":"roditelja"}</b> ${e.pozvane?"planiranih":"svih"} članica:<br>${ks.map(k=>`${esc(first(k.ime))}${k.rod?` <span class="muted">(${esc(first(rodN(k.rod)))})</span>`:""}`).join(", ")||"–"}`;return}
+  if(t==="all")ps=new Set(S.kids.filter(k=>k.status==="aktivna").map(k=>k.rod));else if(grp(t))ps=new Set(groupKids(t).map(k=>k.rod));else ps=new Set([t]);
   $("#nCnt").textContent=`Dobija ${ps.size} ${ps.size===1?"roditelj":"roditelja"}, svaki pojedinačno.`}
 function saveNotice(){const t=$("#nT").value.trim();if(!t)return ferr("Upišite naslov.");const btn=$("#nBtn")?.value||null,must=!!$("#nMust")?.checked;
   if(must&&!$("#nB").value.trim())return ferr("Obavezna obavijest mora imati tekst.");
@@ -1629,7 +1633,7 @@ function evPage(id){const e=S.events.find(x=>x.id===id),st=evStatus(e),p=+e.koti
   return `${backBar("Takmičenje")}
   <div class="card" style="background:linear-gradient(135deg,var(--pink-soft),var(--surface))"><div class="small" style="color:var(--bad);font-weight:700">${fdz(e.datum)}${e.datumDo?" – "+fdz(e.datumDo):""}</div><h2 style="margin:4px 0">${esc(e.naziv)}</h2><div class="small muted">${esc(e.mjesto)}${e.organizator?" · Organizator: "+esc(e.organizator):""}</div><div style="margin-top:8px">${st.h} ${chip(e.pozvane?"samo pozvane":"mogu sve članice",e.pozvane?"pk":"n")}</div>
   <div class="kv"><div><span>Rok za prijavu</span><b>${fdz(e.prijavaDo)}</b></div>${hasKotiz(e)?`<div><span>Kotizacija · pojedinačno</span><b>${p} KM</b></div>${g?`<div><span>Kotizacija · grupa</span><b>${g} KM</b></div><div><span>Pojedinačno + grupa</span><b>${p+g} KM</b></div>`:""}`:""}</div>
-  <div class="acts">${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${id}')">Uredi takmičenje</button>`:""}<button class="btn ghost sm" onclick="prijaveForm('${id}')">Uredi prijave i nastup</button>${st.k==="past"?`<button class="btn sm" onclick="view={seg:'res',mode:'ev',ev:'${id}',sz:'${sez(e.datum)}'};render()">Rezultati</button>`:""}</div></div>
+  <div class="acts">${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${id}')">Uredi takmičenje</button>`:""}<button class="btn ghost sm" onclick="prijaveForm('${id}')">Uredi prijave i nastup</button><button class="btn sm" onclick="noticeForm('ev:${id}')">📢 Obavijest roditeljima</button>${st.k==="past"?`<button class="btn sm" onclick="view={seg:'res',mode:'ev',ev:'${id}',sz:'${sez(e.datum)}'};render()">Rezultati</button>`:""}</div></div>
   <div class="card"><div class="row"><div class="eyebrow grow">Prijave</div>${hasKotiz(e)?chip("Kotizacija "+tot+" KM","pk"):""}</div>
   <div class="count"><div><b>${pr.length}</b><span>Prijavljene</span></div><div><b style="color:var(--warn)">${w.length}</b><span>Čekaju roditelje</span></div><div><b style="color:var(--bad)">${ni.length}</b><span>Ne idu</span></div></div>
   <div class="eyebrow" style="margin-top:12px">Prijavljene (${pr.length})</div><div class="list">${pr.map(k=>row(k,`<button class="btn ghost sm danger" onclick="askUkloni('${id}','${k.id}')">Ukloni</button>`)).join("")||'<div class="li muted">Još niko.</div>'}</div>
@@ -1708,7 +1712,7 @@ const fdt=t=>{const d=new Date(t),z=x=>String(x).padStart(2,"0");return `${z(d.g
 // roditelji (s računom) koji trebaju potvrditi obavijest
 function obvRecip(n){let ks=[];const t=n.tgt;
   if(t==="all")ks=S.kids.filter(k=>k.status==="aktivna");else if(grp(t))ks=groupKids(t);
-  else if(t.startsWith("ev:")){const e=S.events.find(x=>x.id===t.slice(3));return e?[...evParents(e)].filter(p=>p&&!p.startsWith("e:")):[]}
+  else if(t.startsWith("ev:")){const e=S.events.find(x=>x.id===t.slice(3));ks=e?S.kids.filter(k=>k.status==="aktivna"&&canEnter(e,k)):[]}
   else return t&&!t.startsWith("e:")?[t]:[];
   const ids=new Set();ks.forEach(k=>{[k.rod,k.rod2].forEach(r=>{if(r&&!r.startsWith("e:"))ids.add(r)})});return [...ids]}
 function obvStatus(n){if(!n.btn)return"";
