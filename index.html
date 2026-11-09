@@ -300,6 +300,15 @@ table.rep{font-size:12px;white-space:nowrap}table.rep td,table.rep th{padding:6p
 .offline{background:var(--bad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:5px 12px}
 .login form.card{display:flex;flex-direction:column;gap:12px}
 </style>
+<style>
+.composer .wrap{align-items:flex-end}
+.composer textarea#msgIn{flex:1;min-width:0;border:1px solid var(--line);background:var(--sunk);border-radius:20px;padding:10px 14px;font:inherit;font-size:16px;line-height:1.4;resize:none;max-height:45vh;overflow-y:auto;color:var(--fg);display:block}
+.composer .iconbtn{flex:none;margin-bottom:2px}
+input,select,textarea{font-size:16px}
+@media (max-width:700px){input,select,textarea,.inp{font-size:16px!important}}
+.offline{background:var(--bad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:5px 12px}
+.login form.card{display:flex;flex-direction:column;gap:12px}
+</style>
 
 </head>
 <body>
@@ -319,8 +328,8 @@ let base=null,PROFIL=null,syncQ=Promise.resolve(),loading=false;
 
 const t5=t=>t?String(t).slice(0,5):"";
 const locStamp=ts=>{const d=new Date(ts);return iso(d)+"T"+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")};
-const toNit=k=>k.startsWith("k:")?k:"p:"+k;
-const fromNit=n=>n.startsWith("k:")?n:n.slice(2);
+const toNit=k=>k.startsWith("k:")||k.startsWith("a:")?k:"p:"+k;
+const fromNit=n=>n.startsWith("k:")||n.startsWith("a:")?n:n.slice(2);
 const cilj2tgt=c=>c==="all"||c.startsWith("ev:")?c:c.slice(2);
 const tgt2cilj=t=>t==="all"||t.startsWith("ev:")?t:grp(t)?"g:"+t:"p:"+t;
 // ako nova kolona još ne postoji u bazi (SQL nije pokrenut), spremi bez nje
@@ -333,9 +342,9 @@ async function q(p){const r=await p;if(r.error)throw r.error;return r.data||[]}
 // koje nadogradnje baze postoje (ako SQL nije pokrenut, aplikacija radi po starom)
 let FEAT=null;
 async function detectFeat(){const ok=async p=>{try{const r=await p;return !r.error||!/does not exist|Could not find|schema cache|42703|42P01|PGRST20/i.test((r.error.message||"")+(r.error.code||""))}catch(e){return false}};
-  const [v3,v5,gal,push]=await Promise.all([ok(sb.from("clanice").select("dan_uplate").limit(1)),ok(sb.from("prijave").select("status").limit(1)),
-    ok(sb.from("galerija").select("id").limit(1)),ok(sb.rpc("push_odjava",{p_endpoint:"-"}))]);
-  FEAT={v3,v5,gal:gal&&v5,push};document.body.classList.toggle("nov3",!v3);document.body.classList.toggle("nov5",!v5)}
+  const [v3,v5,gal,push,adm]=await Promise.all([ok(sb.from("clanice").select("dan_uplate").limit(1)),ok(sb.from("prijave").select("status").limit(1)),
+    ok(sb.from("galerija").select("id").limit(1)),ok(sb.rpc("push_odjava",{p_endpoint:"-"})),ok(sb.rpc("privatne_poruke"))]);
+  FEAT={v3,v5,gal:gal&&v5,push,adm};document.body.classList.toggle("nov3",!v3);document.body.classList.toggle("nov5",!v5)}
 async function loadAll(){if(!FEAT)await detectFeat();
   loading=true;
   const T=n=>q(sb.from(n).select("*"));
@@ -781,7 +790,10 @@ function threadParents(){let ps=Object.keys(S.rod).filter(p=>!p.startsWith("e:")
 const hasAccess=k=>!!(k&&k.pristup?.on&&k.status!=="ispisana");
 function threadKeys(){const gs=myGroups().map(g=>g.id);
   const ks=S.kids.filter(k=>hasAccess(k)&&(S.role==="admin"||gs.includes(k.grupa)||(k.dod||[]).some(x=>gs.includes(x)))).map(k=>"k:"+k.id);
-  return threadParents().concat(ks)}
+  const adm=S.role==="admin"?Object.keys(S.threads).filter(t=>t.startsWith("a:")&&(S.threads[t]||[]).length):[];
+  return threadParents().concat(adm,ks)}
+const isAdmT=p=>p.startsWith("a:");
+const tPar=p=>isAdmT(p)?p.slice(2):p;
 const isKidT=p=>p.startsWith("k:");
 const isRod=(k,p)=>!!p&&(k.rod===p||k.rod2===p);
 const canEnter=(e,k)=>!e.pozvane||e.pozvane.includes(k.id);
@@ -791,7 +803,8 @@ const isFam=()=>S.role==="roditelj"||S.role==="clanica";
 const famRod=()=>S.role==="clanica"?kid(S.meKid)?.rod:PARENT;
 const myThread=()=>S.role==="clanica"?"k:"+S.meKid:PARENT;
 function unreadFor(p){return(S.threads[p]||[]).filter(m=>!m.del&&m.f!=="staff"&&m.t>(S.seen[p+"|t"]||"")).length}
-function unread(){if(isFam()){const p=myThread();return(S.threads[p]||[]).filter(m=>!m.del&&m.f==="staff"&&m.t>(S.seen[p+"|r"]||"")).length}
+const unSeg=p=>{const n=(S.threads[p]||[]).filter(m=>!m.del&&m.f==="staff"&&m.t>(S.seen[p+"|r"]||"")).length;return n?` <span class="chip bad">${n}</span>`:""};
+function unread(){if(isFam()){const ts=[myThread(),...(S.role==="roditelj"?["a:"+S.me]:[])];return ts.reduce((a,p)=>a+(S.threads[p]||[]).filter(m=>!m.del&&m.f==="staff"&&m.t>(S.seen[p+"|r"]||"")).length,0)}
   return threadKeys().reduce((a,p)=>a+unreadFor(p),0)}
 function noticesFor(p){const ks=S.role==="clanica"?myKids():S.kids.filter(k=>isRod(k,p));const gs=ks.flatMap(k=>[k.grupa,...(k.dod||[])]);const own=new Set([p,...ks.map(k=>k.rod)]);
   return S.notices.filter(n=>n.tgt==="all"||(own.has(n.tgt)&&S.role!=="clanica")||gs.includes(n.tgt)||(n.tgt.startsWith("ev:")&&(()=>{const e=S.events.find(x=>x.id===n.tgt.slice(3));return e&&ks.some(k=>canEnter(e,k))})())).sort((a,b)=>b.d.localeCompare(a.d))}
@@ -1271,8 +1284,8 @@ screens.fee=()=>{
 screens.msg=()=>{
   if(isFam()){const seg=view.seg||"chat";
     const kidTs=S.role==="roditelj"?myKids().filter(hasAccess):[];
-    return `<div class="seg" style="flex-wrap:wrap"><button class="${seg==="chat"?"on":""}" onclick="view.seg='chat';render()">${S.role==="clanica"?"Trenerica":"Moj razgovor"}</button>${kidTs.map(k=>`<button class="${seg==="k:"+k.id?"on":""}" onclick="view.seg='k:${k.id}';render()">${esc(first(k.ime))} ↔ trenerica</button>`).join("")}<button class="${seg==="obv"?"on":""}" onclick="view.seg='obv';render()">Obavijesti</button></div>
-    ${seg==="chat"?chatThread(myThread()):seg==="obv"?noticesFor(famRod()).map(noticeCard).join(""):chatThread(seg,true)}`}
+    return `<div class="seg" style="flex-wrap:wrap"><button class="${seg==="chat"?"on":""}" onclick="view.seg='chat';render()">${S.role==="clanica"?"Trenerica":"Trenerice"}${unSeg(myThread())}</button>${S.role==="roditelj"&&FEAT&&FEAT.adm?`<button class="${seg==="adm"?"on":""}" onclick="view.seg='adm';render()">🔒 Uprava kluba${unSeg("a:"+S.me)}</button>`:""}${kidTs.map(k=>`<button class="${seg==="k:"+k.id?"on":""}" onclick="view.seg='k:${k.id}';render()">${esc(first(k.ime))} ↔ trenerica</button>`).join("")}<button class="${seg==="obv"?"on":""}" onclick="view.seg='obv';render()">Obavijesti</button></div>
+    ${seg==="chat"?chatThread(myThread()):seg==="adm"?chatThread("a:"+S.me):seg==="obv"?noticesFor(famRod()).map(noticeCard).join(""):chatThread(seg,true)}`}
   if(view.p)return chatThread(view.p);
   const seg=view.seg||"chat";
   const ps=threadKeys().sort((a,b)=>((S.threads[b]||[]).at(-1)?.t||"").localeCompare((S.threads[a]||[]).at(-1)?.t||""));
@@ -1280,29 +1293,33 @@ screens.msg=()=>{
   return `<div class="seg"><button class="${seg==="chat"?"on":""}" onclick="view.seg='chat';render()">Razgovori</button><button class="${seg==="obv"?"on":""}" onclick="view.seg='obv';render()">Obavijesti</button></div>
   <div class="note" style="color:var(--fg);background:var(--pink-soft)">Roditelji ne vide jedni druge, ni ko je još primio obavijest. Svaki odgovor je privatan razgovor.</div>
   <div class="grid2"><button class="btn" onclick="noticeForm()">${I.bell} Nova obavijest</button><button class="btn ghost" onclick="pickThread()">${I.chat} Piši roditelju</button></div>
-  ${seg==="chat"?`<p class="small muted" style="margin:0">Razgovore s članicama vidi i njihov roditelj.</p>
+  ${seg==="chat"?`<p class="small muted" style="margin:0">Razgovore s članicama vidi i njihov roditelj.${S.role==="admin"&&FEAT&&FEAT.adm?" Razgovore s oznakom 🔒 vidite samo vi – trenerice ne.":""}</p>
   <div class="card"><div class="list">${ps.map(p=>{const c=S.threads[p]||[],last=c.at(-1),un=unreadFor(p);const kt=isKidT(p);
-    const title=kt?esc(tKid(p).ime)+' <span class="chip pk">članica</span>':esc(rodN(p))+` <span class="small muted">· ${esc(S.kids.filter(k=>isRod(k,p)&&k.status!=="ispisana").map(k=>first(k.ime)).join(" i "))}</span>`;
-    return li(ini(kt?tKid(p).ime:rodN(p)),title,`<span class="ell">${last?(last.del?"🚫 Poruka je obrisana":(last.f==="staff"?"Vi: ":"")+(last.img&&!last.x?"Fotografija":esc(last.x))):"Započnite razgovor"}</span>`,un?`<span class="chip bad">${un}</span>`:"",`sub({p:'${p}',scrollEnd:true})`)}).join("")}</div></div>`
+    const pp=tPar(p);const title=kt?esc(tKid(p).ime)+' <span class="chip pk">članica</span>':esc(rodN(pp))+`${isAdmT(p)?' <span class="chip warn">🔒 samo vi</span>':""} <span class="small muted">· ${esc(S.kids.filter(k=>isRod(k,pp)&&k.status!=="ispisana").map(k=>first(k.ime)).join(" i "))}</span>`;
+    return li(ini(kt?tKid(p).ime:rodN(pp)),title,`<span class="ell">${last?(last.del?"🚫 Poruka je obrisana":(last.f==="staff"?"Vi: ":"")+(last.img&&!last.x?"Fotografija":esc(last.x))):"Započnite razgovor"}</span>`,un?`<span class="chip bad">${un}</span>`:"",`sub({p:'${p}',scrollEnd:true})`)}).join("")}</div></div>`
   :`<button class="btn" onclick="noticeForm()">+ Nova obavijest</button>${notes.map(noticeCard).join("")}`}`;
 };
 function chatThread(p,ro){
   const me=S.role==="roditelj"?"parent":S.role==="clanica"?"kid":"staff";
   if(!ro)markSeen(p);
-  const c=S.threads[p]||[],kt=isKidT(p);
-  const tgs=kt?[grp(tKid(p)?.grupa)]:(isFam()?myKids():S.kids.filter(k=>k.rod===p)).flatMap(k=>[k.grupa,...(k.dod||[])]).map(grp);const tl=[...new Set(tgs.filter(Boolean).flatMap(gTr))].map(stf).filter(Boolean);const trn=esc(tl.length>1?"Trenerice "+andList(tl.map(x=>first(x.ime))):tl[0]?.ime||"Trenerica");
-  const who=m=>m.f==="staff"?(isFam()?trn:"Vi"):m.f==="kid"?esc(first(tKid(p)?.ime||"")):esc(first(rodN(p)));
-  const head=isFam()?`<div class="row"><img src="${LOGO}" alt="" style="width:40px;height:40px;border-radius:50%"><div><h2 style="font-size:19px">${trn}</h2><div class="small muted">${ro?"Razgovor vaše kćerke s trenericom · samo čitanje":S.role==="clanica"?"Tvoj roditelj može vidjeti ove poruke":tl.length>1?"Poruku vide "+andList(tl.map(x=>first(x.ime)))+" (trenerice) i uprava kluba":"Privatni razgovor"}</div></div></div>`
+  const c=S.threads[p]||[],kt=isKidT(p),adm=isAdmT(p),pp=tPar(p);
+  const tgs=kt?[grp(tKid(p)?.grupa)]:(isFam()?myKids():S.kids.filter(k=>isRod(k,pp))).flatMap(k=>[k.grupa,...(k.dod||[])]).map(grp);const tl=[...new Set(tgs.filter(Boolean).flatMap(gTr))].map(stf).filter(Boolean);const trn=esc(tl.length>1?"Trenerice "+andList(tl.map(x=>first(x.ime))):tl[0]?.ime||"Trenerica");
+  const who=m=>m.f==="staff"?(isFam()?(adm?"Uprava kluba":trn):"Vi"):m.f==="kid"?esc(first(tKid(p)?.ime||"")):esc(first(rodN(pp)));
+  const head=isFam()&&adm?`<div class="row"><img src="${LOGO}" alt="" style="width:40px;height:40px;border-radius:50%"><div><h2 style="font-size:19px">Uprava kluba</h2><div class="small muted">🔒 Privatno – poruku vidi samo uprava kluba, trenerice je ne vide</div></div></div>`:isFam()?`<div class="row"><img src="${LOGO}" alt="" style="width:40px;height:40px;border-radius:50%"><div><h2 style="font-size:19px">${trn}</h2><div class="small muted">${ro?"Razgovor vaše kćerke s trenericom · samo čitanje":S.role==="clanica"?"Tvoj roditelj može vidjeti ove poruke":tl.length>1?"Poruku vide "+andList(tl.map(x=>first(x.ime)))+" (trenerice) i uprava kluba":"Privatni razgovor"}</div></div></div>`
    :backBar(kt?esc(tKid(p).ime)+`<div class="small muted" style="font-family:var(--body);font-weight:400">Članica · roditelj ${esc(rodN(tKid(p).rod))} vidi ovaj razgovor</div>`
-     :esc(rodN(p))+`<div class="small muted" style="font-family:var(--body);font-weight:400">${esc(S.kids.filter(k=>k.rod===p).map(k=>k.ime).join(", "))} · ${esc(S.rod[p]?.tel||"")}</div>`)
+     :esc(rodN(pp))+`<div class="small muted" style="font-family:var(--body);font-weight:400">${adm?"🔒 Privatno – trenerice ne vide · ":""}${esc(S.kids.filter(k=>isRod(k,pp)).map(k=>k.ime).join(", "))} · ${esc(S.rod[pp]?.tel||"")}</div>`)
      .replace(/<\/div>$/,S.role==="admin"&&c.length?`<button class="btn ghost sm danger" onclick="askDelThread('${p}')">Obriši razgovor</button></div>`:"</div>");
   return `${head}<div class="chat">${c.map(m=>{const d=new Date(m.t);const del=!ro&&canDelMsg(m);return `<div class="msg ${m.f===me?"me":""}${m.del?" gone":""}">${kt||ro?`<span class="who">${who(m)}</span>`:m.f==="staff"&&!m.mine&&m.autor&&stf(m.autor)?`<span class="who">${esc(first(stf(m.autor).ime))}</span>`:""}${m.del?"🚫 Poruka je obrisana":(m.img?`<img src="${m.img}" alt="Poslana fotografija">`:"")+(m.x?esc(m.x):"")}<time>${d.getDate()}.${d.getMonth()+1}. u ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}${del?`<button class="lnk" onclick="askDelMsg('${p}','${m.id}')" aria-label="Obriši poruku">Obriši</button>`:""}</time></div>`}).join("")||'<p class="muted small" style="text-align:center">Još nema poruka.</p>'}</div>
-  ${ro?"":`<div style="height:56px"></div>
+  ${ro?"":`<div id="chatPad" style="height:64px"></div>
   <div class="composer"><div class="wrap"><label class="iconbtn" aria-label="Pošalji fotografiju" style="cursor:pointer">${I.img}<input type="file" accept="image/*" hidden onchange="sendImg(this,'${p}')"></label>
-  <input id="msgIn" type="text" placeholder="Napišite poruku" onkeydown="if(event.key==='Enter')sendMsg('${p}')"><button class="iconbtn p" onclick="sendMsg('${p}')" aria-label="Pošalji">${I.send}</button></div></div>`}`;
+  <textarea id="msgIn" rows="1" placeholder="Napišite poruku" data-p="${p}" oninput="growMsg(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!('ontouchstart' in window)){event.preventDefault();sendMsg('${p}')}">${esc((window.__draft||{})[p]||"")}</textarea><button class="iconbtn p" onclick="sendMsg('${p}')" aria-label="Pošalji">${I.send}</button></div></div>`}`;
 }
 function pushMsg(p,m,blob){const tmp=uid();m={...m,id:uid(),mine:true};(S.threads[p]=S.threads[p]||[]).push({f:myOd(),t:nowStamp(),tmp,...m});view.scrollEnd=true;render();sendToDb(p,{...m,tmp},blob)}
-function sendMsg(p){const v=$("#msgIn").value.trim();if(!v)return;pushMsg(p,{x:v})}
+function sendMsg(p){const v=$("#msgIn").value.trim();if(!v)return;(window.__draft=window.__draft||{})[p]="";pushMsg(p,{x:v})}
+// polje za pisanje raste s tekstom (do pola ekrana), tekst se ne gubi kad se ekran osvježi
+function growMsg(t){(window.__draft=window.__draft||{})[t.dataset.p]=t.value;t.style.height="auto";t.style.height=Math.min(t.scrollHeight+2,Math.round(innerHeight*.45))+"px";
+  const c=t.closest(".composer"),pad=document.getElementById("chatPad");if(c&&pad)pad.style.height=(c.offsetHeight+12)+"px"}
+setInterval(()=>{const t=document.getElementById("msgIn");if(t&&t.value&&!t.style.height)growMsg(t)},400);
 function sendImg(inp,p){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{
   const s=Math.min(1,1280/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
   c.toBlob(b=>{if(!b)return toast("Fotografija se ne može otvoriti.");pushMsg(p,{img:URL.createObjectURL(b)},b)},"image/jpeg",.8)};im.onerror=()=>toast("Fotografija se ne može otvoriti.");im.src=r.result};r.readAsDataURL(f)}
@@ -1504,10 +1521,12 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
 
 /* ================= NADOGRADNJA 5 (kao Victoria) ================= */
 /* ---------- Poruke: piši roditelju ---------- */
-function pickThread(){const ps=threadKeys();
+function pickThread(){const ps=threadKeys().filter(t=>!isAdmT(t));
   sheet(`<h2>Piši roditelju</h2><input class="inp" placeholder="Traži roditelja ili dijete" oninput="document.querySelectorAll('#ptL .li').forEach(e=>e.hidden=!e.textContent.toLowerCase().includes(this.value.toLowerCase()))">
   <div class="list" id="ptL" style="max-height:60vh;overflow:auto">${ps.map(p=>{const kt=isKidT(p);const nm=kt?tKid(p).ime:rodN(p);const sub_=kt?"članica":S.kids.filter(k=>isRod(k,p)&&k.status!=="ispisana").map(k=>first(k.ime)).join(" i ");
-    return li(ini(nm),esc(nm),esc(sub_),"",`closeSheet();go('msg',{p:'${p}',scrollEnd:true})`)}).join("")||'<div class="li muted">Još nema roditelja s računom.</div>'}</div>`)}
+    const priv=!kt&&S.role==="admin"&&FEAT&&FEAT.adm;
+    return priv?`<div class="li"><span class="av">${ini(nm)}</span><div class="grow" style="min-width:0"><b>${esc(nm)}</b><div class="small muted ell">${esc(sub_)}</div></div><div class="row" style="gap:6px"><button class="btn sm" onclick="closeSheet();go('msg',{p:'${p}',scrollEnd:true})">Piši</button><button class="btn ghost sm" onclick="closeSheet();go('msg',{p:'a:${p}',scrollEnd:true})">🔒 Privatno</button></div></div>`
+      :li(ini(nm),esc(nm),esc(sub_),"",`closeSheet();go('msg',{p:'${p}',scrollEnd:true})`)}).join("")||'<div class="li muted">Još nema roditelja s računom.</div>'}</div>`)}
 
 /* ---------- Moj profil ---------- */
 function myProfile(){if(!PROFIL)return;
