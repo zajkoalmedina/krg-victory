@@ -717,7 +717,7 @@ function monthsFrom(k,back=24){const out=[];let m=ym();for(let i=0;i<back;i++){i
 function unpaidMonths(k){return monthsFrom(k).filter(m=>isUnpaid(k,m)).reverse()}
 function nextPay(k){const u=unpaidMonths(k);if(u.length)return{m:u[0],...dueState(k,u[0])};let m=ym();for(let i=0;i<24&&!isUnpaid(k,m);i++)m=addMonth(m,1);return{m,st:"next",d:dueDate(k,m)}}
 function dueTxt(k,m){const s=dueState(k,m);return s.st==="next"?"Sljedeća uplata: "+fdz(s.d):s.st==="late"?`Uplata bila ${fdz(s.d).slice(0,6)} · dug od ${fdz(s.dug).slice(0,6)}`:`<span class="red">Dug</span> · uplata bila ${fdz(s.d)}`}
-function payChip(k,m){const p=payOf(k.id,m);if(!isUnpaid(k,m))return chip(...PAY[p.s]);const st=dueState(k,m).st;
+function payChip(k,m){const p=payOf(k.id,m);if(!isUnpaid(k,m))return chip(...(PAY[p.s]||PAY.neplaceno));const st=dueState(k,m).st;
   return p.s==="djelimicno"?chip("Djelimično"+(st==="dug"?" · dug":""),st==="dug"?"bad":"info"):st==="dug"?chip("Dug","bad"):st==="late"?chip("Nije plaćeno","warn"):chip("Još nije vrijeme","n")}
 const owedFor=(k,m)=>{const p=payOf(k.id,m);return Math.max(0,kidFee(k)-(p.s==="djelimicno"?(p.paid||0):0))};
 const sisterOf=(k,m)=>S.kids.find(x=>x.rod===k.rod&&x.rod&&x.id!==k.id&&x.status==="aktivna"&&elig(x,m)&&isUnpaid(x,m));
@@ -1079,7 +1079,7 @@ function delOneOff(id){S.izmjene=S.izmjene.filter(z=>z.id!==id);save();render();
 /* izvoz u Excel */
 function reportData(t,m){const sz=curSez();
   if(t==="clanice")return[["Ime i prezime","Datum rođenja","Datum upisa","Grupa","Status","Roditelj","Telefon","E-mail","Članarina (KM)"],...S.kids.slice().sort((a,b)=>a.ime.localeCompare(b.ime,"bs")).map(k=>[k.ime,fd(k.dob),fd(k.upis),grp(k.grupa)?.name||"",MST[k.status][0],rodN(k.rod),S.rod[k.rod]?.tel||"",S.rod[k.rod]?.mail||"",k.status==="aktivna"?kidFee(k):0])];
-  if(t==="uplate")return[["Ime i prezime","Grupa","Mjesec","Članarina (KM)","Status","Uplaćeno (KM)","Datum"],...S.kids.filter(k=>k.status!=="ispisana"&&owes(k.id,m)).map(k=>{const p=payOf(k.id,m),f=kidFee(k);return[k.ime,grp(k.grupa)?.name||"",ymL(m),f,PAY[p.s][0],p.s==="placeno"?f:p.s==="djelimicno"?p.paid:0,fd(p.d)]})];
+  if(t==="uplate")return[["Ime i prezime","Grupa","Mjesec","Članarina (KM)","Status","Uplaćeno (KM)","Datum"],...S.kids.filter(k=>k.status!=="ispisana"&&owes(k.id,m)).map(k=>{const p=payOf(k.id,m),f=kidFee(k);return[k.ime,grp(k.grupa)?.name||"",ymL(m),f,(PAY[p.s]||PAY.neplaceno)[0],p.s==="placeno"?f:p.s==="djelimicno"?p.paid:0,fd(p.d)]})];
   if(t==="prisustvo")return[["Ime i prezime","Grupa","Prisutna","Opravdano","Izostala","Prisustvo %"],...S.kids.filter(k=>k.status!=="ispisana").map(k=>{const a={p:0,o:0,n:0};Object.entries(S.att).forEach(([key,v])=>{if(v[k.id]&&sez(key.slice(0,10))===sz)a[v[k.id]]++});const t=a.p+a.o+a.n;return[k.ime,grp(k.grupa)?.name||"",a.p,a.o,a.n,t?Math.round(a.p/t*100)+"%":"–"]})];
   if(t==="rezultati")return[["Datum","Takmičenje","Mjesto","Ime i prezime","Kategorija","Rekvizit","Ocjena","Plasman"],...S.results.map(r=>({r,e:S.events.find(e=>e.id===r.eventId)})).filter(x=>x.e&&sez(x.e.datum)===sz).sort((a,b)=>a.e.datum.localeCompare(b.e.datum)||a.r.plasman-b.r.plasman).map(({r,e})=>[fd(e.datum),e.naziv,e.mjesto,kid(r.kidId)?.ime||"",r.kategorija,r.rekvizit,r.ocjena.toFixed(3).replace(".",","),r.plasman])];
   return[]}
@@ -1232,7 +1232,7 @@ function parentHome(){
   <div class="card"><div class="row"><span class="av big">${ini(k.ime)}</span><div class="grow"><h3 style="font-size:19px">${esc(k.ime)}</h3><div class="small muted">${esc(g?.name||"")} · ${esc(trnL(g))}</div></div></div>
   ${nx?`<div class="next"><span class="eyebrow">Sljedeći trening</span><b>${DAN[dIdx(nx.date)]}, ${fd(nx.date)} · ${nx.od}–${nx.do}</b><span class="small muted">${esc(lokN(nx.loc))}</span>${nx.z?`<span class="chip warn">Promjena termina</span>`:""}</div>`:""}</div>
   ${un?`<button class="card alert" onclick="go('msg',{scrollEnd:true})"><b>Nova poruka od trenerice</b><span class="small">Dodirnite za otvaranje razgovora</span></button>`:""}
-  <div class="grid2">${cl?"":`<button class="card tile2" onclick="go('fee',{kid:'${k.id}'})"><span class="eyebrow">Članarina · ${MJF[new Date().getMonth()].toLowerCase()}</span><b class="score">${kidFee(k)} KM</b>${chip(...PAY[p.s])}</button>`}
+  <div class="grid2">${cl?"":`<button class="card tile2" onclick="go('fee',{kid:'${k.id}'})"><span class="eyebrow">Članarina · ${MJF[new Date().getMonth()].toLowerCase()}</span><b class="score">${kidFee(k)} KM</b>${chip(...(PAY[p.s]||PAY.neplaceno))}</button>`}
   <div class="card tile2" ${cl?'style="grid-column:1/-1"':""}><span class="eyebrow">Prisustvo · ${MJF[new Date().getMonth()].toLowerCase()}</span><b class="score">${pr} / ${mAtt.length}</b><span class="small muted">treninga</span></div></div>
   ${ev?famEvCard(ev,k,cl):""}
   ${lr?`<button class="card" style="text-align:left;width:100%" onclick="go('comp',{seg:'res',mode:'kid',kid:'${k.id}',sz:'sve'})"><div class="eyebrow">Zadnji rezultat</div><div class="row" style="margin-top:6px"><span class="medal ${lr.plasman<=3?"m"+lr.plasman:"mx"}">${lr.plasman}.</span><div class="grow"><b>${esc(S.events.find(e=>e.id===lr.eventId).naziv)}</b><div class="small muted">${esc(lr.rekvizit)}</div></div><span class="score">${lr.ocjena.toFixed(3)}</span></div></button>`:""}
@@ -1257,7 +1257,7 @@ function pricesTable(){return `<div class="tbl" style="margin-top:8px"><table>${
 screens.fee=()=>{
   const k=curKid();if(!k)return"";const m=ym(),p=payOf(k.id,m),fee=kidFee(k);
   return `<h2>Članarina</h2>${kidSwitch()}
-  <div class="card"><div class="eyebrow">${ymL(m)}</div><div class="row" style="margin-top:6px"><span class="score grow" style="font-size:30px">${fee} KM</span>${elig(k,m)?payChip(k,m):chip(...PAY[p.s])}</div>
+  <div class="card"><div class="eyebrow">${ymL(m)}</div><div class="row" style="margin-top:6px"><span class="score grow" style="font-size:30px">${fee} KM</span>${elig(k,m)?payChip(k,m):chip(...(PAY[p.s]||PAY.neplaceno))}</div>
   <div class="small muted" style="margin-top:4px">${p.s==="placeno"?"Uplata potvrđena "+fd(p.d)+".":p.s==="ceka"?"Uprava kluba provjerava uplatu.":p.s==="djelimicno"?`Uplaćeno ${p.paid} KM, preostalo ${fee-p.paid} KM.`:p.s==="pauza"?"Članica je na pauzi.":p.s==="prije"?"Članarina počinje od mjeseca upisa ("+fd(k.upis)+").":p.s==="obrisano"?"Za ovaj mjesec nema članarine.":"Članarina za ovaj mjesec još nije evidentirana."}</div>
   ${k.status==="aktivna"?(()=>{const np=nextPay(k);return np.st==="dug"?`<div class="dueline bad">Dug – uplata je trebala biti ${fdz(np.d)}${np.m!==m?" ("+ymL(np.m)+")":""}</div>`:`<div class="dueline">Sljedeća uplata: <b>${fdz(np.d)}</b></div>`})():""}
   ${myKids().length>1?`<div class="fam"><span class="eyebrow">Ukupno za račun · ${MJF[new Date().getMonth()].toLowerCase()}</span>${myKids().filter(x=>x.status==="aktivna").map(x=>`<div><span>${esc(first(x.ime))}</span><b>${kidFee(x)} KM</b></div>`).join("")}<div class="tot"><span>Ukupno</span><b>${myKids().filter(x=>x.status==="aktivna").reduce((a,x)=>a+kidFee(x),0)} KM</b></div><span class="small muted">Popust za sestre je uračunat.</span></div>`:""}
