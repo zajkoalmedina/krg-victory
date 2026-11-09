@@ -1753,8 +1753,8 @@ function mustShow(id){const n=S.notices.find(x=>x.id===id);if(!n)return;MUST={id
       ${n.must?"":`<button class="btn ghost block" style="margin-top:8px" onclick="mustClose()">Kasnije</button>`}</div></div>`;
   document.body.appendChild(ov);document.body.style.overflow="hidden";
   ov.addEventListener("click",e=>{if(e.target===ov){if(!n.must)return mustClose();const s=$("#mustSh");s.classList.remove("shake");void s.offsetWidth;s.classList.add("shake");toast("Prvo pročitajte i potvrdite obavijest")}});
-  const b=$("#mustB");b.addEventListener("scroll",()=>{if(b.scrollTop+b.clientHeight>=b.scrollHeight-10){MUST.end=true;mustUpd()}});
-  setTimeout(()=>{if(b.scrollHeight<=b.clientHeight+10)MUST.end=true;mustUpd()},80)}
+  const b=$("#mustB");b.addEventListener("scroll",()=>{if(MUST&&b.scrollTop+b.clientHeight>=b.scrollHeight-10){MUST.end=true;mustUpd()}});
+  setTimeout(()=>{if(!MUST)return;if(b.scrollHeight<=b.clientHeight+10)MUST.end=true;mustUpd()},80)}
 function mustUpd(){if(!MUST)return;const n=S.notices.find(x=>x.id===MUST.id),c=$("#mustC");const ok=MUST.end&&(n.btn!=="slazem"||c?.checked);
   $("#mustBtn").disabled=!ok;$("#mustN").textContent=!MUST.end?"⬇️ Skrolajte do kraja da možete potvrditi":(n.btn==="slazem"&&!c?.checked?"☑️ Označite kvačicu da potvrdite":"Spremno – dodirnite dugme")}
 function mustClose(){document.getElementById("mustOv")?.remove();document.body.style.overflow="";MUST=null}
