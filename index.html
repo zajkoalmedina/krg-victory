@@ -342,9 +342,9 @@ async function q(p){const r=await p;if(r.error)throw r.error;return r.data||[]}
 // koje nadogradnje baze postoje (ako SQL nije pokrenut, aplikacija radi po starom)
 let FEAT=null;
 async function detectFeat(){const ok=async p=>{try{const r=await p;return !r.error||!/does not exist|Could not find|schema cache|42703|42P01|PGRST20/i.test((r.error.message||"")+(r.error.code||""))}catch(e){return false}};
-  const [v3,v5,gal,push,adm]=await Promise.all([ok(sb.from("clanice").select("dan_uplate").limit(1)),ok(sb.from("prijave").select("status").limit(1)),
+  const [v3,st,stf_,v5,gal,push,adm]=await Promise.all([ok(sb.from("clanice").select("dan_uplate").limit(1)),ok(sb.from("prijave").select("status").limit(1)),ok(sb.rpc("roditelj_takmicenje",{takm:"00000000-0000-0000-0000-000000000000",kid:"00000000-0000-0000-0000-000000000000",odgovor:"x"})),ok(sb.rpc("admin_racuni")),
     ok(sb.from("galerija").select("id").limit(1)),ok(sb.rpc("push_odjava",{p_endpoint:"-"})),ok(sb.rpc("privatne_poruke"))]);
-  FEAT={v3,v5,gal:gal&&v5,push,adm};document.body.classList.toggle("nov3",!v3);document.body.classList.toggle("nov5",!v5)}
+  FEAT={v3,st:st&&stf_,v5:v5&&st,gal:gal&&v5,push,adm};document.body.classList.toggle("nov3",!v3);document.body.classList.toggle("nov5",!FEAT.v5)}
 async function loadAll(){if(!FEAT)await detectFeat();
   loading=true;
   const T=n=>q(sb.from(n).select("*"));
@@ -423,7 +423,7 @@ function rowsFromS(){
   S.events.forEach(e=>{if(S.role==="admin")put("takmicenja",e.id,{id:e.id,naziv:e.naziv,organizator:e.organizator||null,mjesto:e.mjesto||null,datum:e.datum,datum_do:e.datumDo||null,prijava_do:e.prijavaDo,kotizacija:e.kotizacija||0,kotizacija_grupa:e.kotizacijaGrupa||0,nastupi:e.nastupi||{},pozvane:e.pozvane||null});
     if(!isStaff())return;   // roditelj se prijavljuje preko funkcije roditelj_takmicenje
     const row=(k,st)=>{const pl=(e.placeno||[]).includes(k);put("prijave",e.id+"|"+k,{takmicenje_id:e.id,clanica_id:k,status:st,kotizacija_placena:pl,kotizacija_datum:pl?(e.placenoDat||{})[k]||null:null})};
-    e.prijave.forEach(k=>row(k,"ide"));if(!FEAT||!FEAT.v5)return;(e.neIde||[]).forEach(k=>{if(!e.prijave.includes(k))row(k,"ne_ide")});
+    e.prijave.forEach(k=>row(k,"ide"));if(!FEAT||!FEAT.st)return;(e.neIde||[]).forEach(k=>{if(!e.prijave.includes(k))row(k,"ne_ide")});
     (e.placeno||[]).forEach(k=>{if(!e.prijave.includes(k)&&!(e.neIde||[]).includes(k))row(k,"ceka")})});
   S.results.forEach(r=>put("rezultati",r.id,{id:r.id,takmicenje_id:r.eventId,clanica_id:r.kidId,kategorija:r.kategorija,rekvizit:r.rekvizit,ocjena:r.ocjena,plasman:r.plasman}));
   S.notices.forEach(n=>put("obavijesti",n.id,{id:n.id,vrsta:n.kind,naslov:n.title,tekst:n.body||null,cilj:tgt2cilj(n.tgt),autor_id:n.from,...(n.must||n.btn?{obavezna:!!n.must,dugme:n.btn||null}:{})}));
@@ -1373,9 +1373,9 @@ function calScreen(){
   const evs=S.events.filter(e=>sez(e.datum)===sz).sort((a,b)=>a.datum.localeCompare(b.datum));
   const up=evs.filter(e=>evStatus(e).k!=="past"),past=evs.filter(e=>evStatus(e).k==="past").reverse();
   const card=e=>{const st=evStatus(e);let acts="";
-    if(S.role==="clanica"){const k=curKid(),on=k&&e.prijave.includes(k.id);acts=on?`<span class="regok">✓ Ideš na takmičenje</span>`+(hasKotiz(e)?famLine(e,k):""):k&&(e.neIde||[]).includes(k.id)?chip("Ne ideš","n"):!canEnter(e,k)?chip("Nije planirana","n"):st.k==="open"?chip(e.pozvane?"Pozvana si · roditelj potvrđuje":"Prijavu radi roditelj","warn"):""}
+    if(S.role==="clanica"){const k=curKid(),on=k&&e.prijave.includes(k.id);acts=on?`<span class="regok">✓ Ideš na takmičenje</span>`+(hasKotiz(e)?famLine(e,k):""):k&&evNo(e).includes(k.id)?chip("Ne ideš","n"):!canEnter(e,k)?chip("Nije planirana","n"):st.k==="open"?chip(e.pozvane?"Pozvana si · roditelj potvrđuje":"Prijavu radi roditelj","warn"):""}
     else if(S.role==="roditelj"){acts=myKids().map(k=>famAct(e,k)).join("")}
-    else{const w=evWait(e),ni=(e.neIde||[]).length,kl=kotizKids(e);acts=`<div class="small" style="flex-basis:100%">Prijavljeno <b>${e.prijave.length}</b>${e.pozvane?` · čeka roditelje <b style="color:var(--warn)">${w.length}</b> · ne ide <b>${ni}</b>`:""}</div>${chip(e.pozvane?"samo pozvane":"mogu sve članice",e.pozvane?"pk":"n")}<button class="btn sm" onclick="sub({det:'${e.id}'})">Otvori</button>${hasKotiz(e)&&kl.length?`<button class="btn ghost sm" onclick="kotizForm('${e.id}')">💳 Kotizacije ${(e.placeno||[]).filter(k=>kl.includes(k)).length}/${kl.length}</button>`:""}${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${e.id}')">Uredi</button>`:""}`}
+    else{const w=evWait(e),ni=(e.neIde||[]).length,kl=kotizKids(e);acts=`<div class="small" style="flex-basis:100%">Prijavljeno <b>${e.prijave.length}</b>${e.pozvane?`${w.length?` · čeka roditelje <b style="color:var(--warn)">${w.length}</b>`:""} · ne ide <b>${evNo(e).length}</b>`:""}</div>${chip(e.pozvane?"samo pozvane":"mogu sve članice",e.pozvane?"pk":"n")}<button class="btn sm" onclick="sub({det:'${e.id}'})">Otvori</button>${hasKotiz(e)&&kl.length?`<button class="btn ghost sm" onclick="kotizForm('${e.id}')">💳 Kotizacije ${(e.placeno||[]).filter(k=>kl.includes(k)).length}/${kl.length}</button>`:""}${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${e.id}')">Uredi</button>`:""}`}
     if(st.k==="past")acts+=`<button class="btn sm" onclick="view={seg:'res',mode:'ev',ev:'${e.id}',sz:'${sez(e.datum)}'};render()">Rezultati</button>`;
     return `<div class="card ev">${dateBox(e)}<div class="grow"><h3>${esc(e.naziv)}</h3>${e.organizator?`<div class="small muted">Organizator: ${esc(e.organizator)}</div>`:""}<div class="meta"><span>${esc(e.mjesto)}</span><span>Prijava do ${fd(e.prijavaDo)}</span><span>${kotizTxt(e)}</span></div><div style="margin-top:6px">${st.h}</div><div class="acts" style="flex-direction:${isFam()?"column":"row"};align-items:${isFam()?"flex-start":"center"}">${acts}</div></div></div>`};
   return `<div class="sec-h"><h2>Kalendar takmičenja</h2>${S.role==="admin"?`<button class="btn sm" onclick="eventForm()">+ Dodaj</button>`:""}</div>
@@ -1458,7 +1458,7 @@ function kotizCard(k){if(S.role!=="admin")return"";
   const evs=S.events.filter(e=>(e.prijave.includes(k.id)&&(evStatus(e).k!=="past"||(hasKotiz(e)&&!(e.placeno||[]).includes(k.id))))||(e.pozvane&&e.pozvane.includes(k.id)&&evStatus(e).k!=="past")).sort((a,b)=>a.datum.localeCompare(b.datum));
   if(!evs.length)return"";
   return `<div class="card"><div class="eyebrow">Takmičenja i kotizacije</div><div class="list" style="margin-top:4px">${evs.map(e=>{const on=e.prijave.includes(k.id),paid=(e.placeno||[]).includes(k.id),dt=(e.placenoDat||{})[k.id];
-    const right=(e.neIde||[]).includes(k.id)?`${chip("Ne ide","n")}<button class="btn ghost sm" onclick="adminPrijavi('${e.id}','${k.id}')">Ipak ide</button>`:!on?`${chip("Čeka roditelja","warn")}<button class="btn ghost sm" onclick="adminPrijavi('${e.id}','${k.id}')">Prijavi</button>`:!hasKotiz(e)?chip("Prijavljena","pk"):paid?`${chip("✓ Plaćeno"+(dt?" "+fdz(dt).slice(0,6):""),"ok")}<button class="btn ghost sm" onclick="askUndoKotiz('${e.id}','${k.id}')">Poništi</button>`:`<button class="btn sm" onclick="setKotiz('${e.id}','${k.id}',true);render();toast('Kotizacija plaćena')">💳 Platila</button>`;
+    const right=evNo(e).includes(k.id)?`${chip("Ne ide","n")}<button class="btn ghost sm" onclick="adminPrijavi('${e.id}','${k.id}')">Ipak ide</button>`:!on?`${chip("Čeka roditelja","warn")}<button class="btn ghost sm" onclick="adminPrijavi('${e.id}','${k.id}')">Prijavi</button>`:!hasKotiz(e)?chip("Prijavljena","pk"):paid?`${chip("✓ Plaćeno"+(dt?" "+fdz(dt).slice(0,6):""),"ok")}<button class="btn ghost sm" onclick="askUndoKotiz('${e.id}','${k.id}')">Poništi</button>`:`<button class="btn sm" onclick="setKotiz('${e.id}','${k.id}',true);render();toast('Kotizacija plaćena')">💳 Platila</button>`;
     return `<div class="li" style="flex-direction:column;align-items:stretch;gap:6px"><div><b>${esc(e.naziv)}</b><div class="small muted">${fd(e.datum)}${e.organizator?" · "+esc(e.organizator):""} · ${NAST[nastOf(e,k.id)].toLowerCase()}${hasKotiz(e)?" · "+kidKotiz(e,k.id)+" KM":""}</div></div><div class="kotrow">${right}</div></div>`}).join("")}</div></div>`}
 function adminPrijavi(eid,k){const e=S.events.find(x=>x.id===eid);if(!e.prijave.includes(k))e.prijave.push(k);e.neIde=(e.neIde||[]).filter(x=>x!==k);save();render();toast(first(kid(k).ime)+" je prijavljena")}
 function askUndoKotiz(eid,k){const e=S.events.find(x=>x.id===eid);ask(`Poništiti plaćenu kotizaciju za <b>${esc(kid(k).ime)}</b> („${esc(e.naziv)}“)?`,"Poništi",()=>{setKotiz(eid,k,false);render();toast("Kotizacija poništena")})}
@@ -1631,23 +1631,27 @@ function delKid(id){const k=kid(id);if($("#dkN").value.trim().toLowerCase()!==fi
 
 
 /* ---------- takmičenja: roditelj potvrđuje (Ide / Ne ide) ---------- */
-const evWait=e=>e.pozvane?e.pozvane.filter(k=>{const x=kid(k);return x&&x.status!=="ispisana"&&!e.prijave.includes(k)&&!(e.neIde||[]).includes(k)}):[];
-const kotizKids=e=>[...e.prijave,...(FEAT&&FEAT.v5?evWait(e):[])].filter(k=>kid(k));
+const evUnans=e=>e.pozvane?e.pozvane.filter(k=>{const x=kid(k);return x&&x.status!=="ispisana"&&!e.prijave.includes(k)&&!(e.neIde||[]).includes(k)}):[];
+const evOpen=e=>evStatus(e).k==="open";
+const evWait=e=>evOpen(e)?evUnans(e):[];                       // čekaju roditelja samo dok traje prijava
+const evAutoNo=e=>evOpen(e)?[]:evUnans(e);                       // poslije roka: nisu se izjasnili = ne ide
+const evNo=e=>[...(e.neIde||[]),...evAutoNo(e)];
+const kotizKids=e=>[...e.prijave,...(FEAT&&FEAT.st?evWait(e):[])].filter(k=>kid(k));
 function famAct(e,k){const st=evStatus(e),on=e.prijave.includes(k.id),ni=(e.neIde||[]).includes(k.id),open=st.k==="open",paid=(e.placeno||[]).includes(k.id),nm=esc(first(k.ime));
   const amt=hasKotiz(e)?`<span class="small muted">${NAST[nastOf(e,k.id)].toLowerCase()} · ${kidKotiz(e,k.id)} KM</span>`:"";
   if(on)return `<div class="kotrow"><span class="regok">✓ ${nm} ide</span>${kotizStatus(e,k)}${open&&!paid?`<button class="lnk2 small" onclick="event.stopPropagation();askChange('${e.id}','${k.id}')">Promijeni</button>`:""}</div>${famLine(e,k)}`;
   if(ni)return `<div class="kotrow">${chip(first(k.ime)+" ne ide","n")}${open?`<button class="lnk2 small" onclick="event.stopPropagation();parentAns('${e.id}','${k.id}','ide')">Ipak ide</button>`:""}</div>`;
   if(!canEnter(e,k))return `<div class="kotrow">${chip(first(k.ime)+": nije planirana","n")}</div>`;
-  if(!open)return `<div class="kotrow">${chip(first(k.ime)+": rok za prijavu je prošao","n")}</div>`;
-  if(e.pozvane&&FEAT&&FEAT.v5)return `<div class="askgo"><div><b>${nm} je pozvana.</b> Ide li na takmičenje?</div>${amt}<div class="row" style="gap:8px;margin-top:6px"><button class="btn sm" style="background:var(--ok);color:#fff" onclick="event.stopPropagation();parentAns('${e.id}','${k.id}','ide')">✓ Ide</button><button class="btn ghost sm" onclick="event.stopPropagation();parentAns('${e.id}','${k.id}','ne_ide')">Ne ide</button></div></div>`;
+  if(!open)return `<div class="kotrow">${chip(first(k.ime)+" ne ide","n")}<span class="small muted">rok za prijavu je prošao</span></div>`;
+  if(e.pozvane&&FEAT&&FEAT.st)return `<div class="askgo"><div><b>${nm} je pozvana.</b> Ide li na takmičenje?</div>${amt}<div class="row" style="gap:8px;margin-top:6px"><button class="btn sm" style="background:var(--ok);color:#fff" onclick="event.stopPropagation();parentAns('${e.id}','${k.id}','ide')">✓ Ide</button><button class="btn ghost sm" onclick="event.stopPropagation();parentAns('${e.id}','${k.id}','ne_ide')">Ne ide</button></div></div>`;
   return `<div class="kotrow"><button class="btn sm" onclick="event.stopPropagation();parentAns('${e.id}','${k.id}','ide')">Prijavi ${nm}</button>${amt}</div>`}
 function askChange(eid,kId){const e=S.events.find(x=>x.id===eid),k=kid(kId);
-  const pl=e.pozvane&&FEAT&&FEAT.v5;
+  const pl=e.pozvane&&FEAT&&FEAT.st;
   ask(`${pl?`<b>${esc(first(k.ime))}</b> ipak ne ide na „${esc(e.naziv)}“?`:`Odjaviti <b>${esc(first(k.ime))}</b> s takmičenja „${esc(e.naziv)}“?`}`,pl?"Ne ide":"Odjavi",()=>parentAns(eid,kId,pl?"ne_ide":"povuci"))}
 function askOdjava(eid,kId){askChange(eid,kId)}
 async function parentAns(eid,kId,odg){const e=S.events.find(x=>x.id===eid),k=kid(kId);
   let r;
-  if(FEAT&&FEAT.v5)r=await sb.rpc("roditelj_takmicenje",{takm:eid,kid:kId,odgovor:odg});
+  if(FEAT&&FEAT.st)r=await sb.rpc("roditelj_takmicenje",{takm:eid,kid:kId,odgovor:odg});
   else if(odg==="ide")r=await sb.from("prijave").insert({takmicenje_id:eid,clanica_id:kId,prijavio:S.me,kotizacija_placena:false});
   else r=await sb.from("prijave").delete().match({takmicenje_id:eid,clanica_id:kId});
   if(r.error&&/duplicate|23505/.test(r.error.message||""))r={};
@@ -1657,12 +1661,12 @@ async function parentAns(eid,kId,odg){const e=S.events.find(x=>x.id===eid),k=kid
   if(odg==="ide")e.prijave.push(kId);if(odg==="ne_ide")e.neIde.push(kId);
   render();toast(odg==="ide"?`✓ ${first(k.ime)} ide na takmičenje`:odg==="ne_ide"?`Zabilježeno: ${first(k.ime)} ne ide`:`${first(k.ime)} je odjavljena`)}
 function famEvCard(ev,k,cl){return `<div class="card"><div class="row"><div class="eyebrow grow">Sljedeće takmičenje</div><button class="lnk2 small" onclick="go('comp',{seg:'cal'})">Svi detalji</button></div><div class="ev" style="margin-top:8px">${dateBox(ev)}<div class="grow"><h3>${esc(ev.naziv)}</h3>${ev.organizator?`<div class="small muted">Organizator: ${esc(ev.organizator)}</div>`:""}<div class="meta"><span>${esc(ev.mjesto)}</span><span>Prijava do ${fd(ev.prijavaDo)}</span></div>
-  <div style="margin-top:8px">${cl?(ev.prijave.includes(k.id)?`<span class="regok">✓ Ideš na takmičenje</span>`:chip((ev.neIde||[]).includes(k.id)?"Ne ideš":"Roditelj potvrđuje","n")):famAct(ev,k)}</div></div></div></div>`}
+  <div style="margin-top:8px">${cl?(ev.prijave.includes(k.id)?`<span class="regok">✓ Ideš na takmičenje</span>`:chip(evNo(ev).includes(k.id)?"Ne ideš":"Roditelj potvrđuje","n")):famAct(ev,k)}</div></div></div></div>`}
 
 /* ---------- stranica takmičenja (osoblje) ---------- */
 function evPage(id){const e=S.events.find(x=>x.id===id),st=evStatus(e),p=+e.kotizacija||0,g=+e.kotizacijaGrupa||0;
   const mine=k=>S.role==="admin"||myGroups().some(gg=>gg.id===k.grupa||(k.dod||[]).includes(gg.id));
-  const w=evWait(e).map(kid).filter(mine),pr=e.prijave.map(kid).filter(Boolean).filter(mine),ni=(e.neIde||[]).map(kid).filter(Boolean).filter(mine);
+  const w=evWait(e).map(kid).filter(mine),pr=e.prijave.map(kid).filter(Boolean).filter(mine),ni=evNo(e).map(kid).filter(Boolean).filter(mine),auto=new Set(evAutoNo(e));
   const srt=a=>a.sort((x,y)=>x.ime.localeCompare(y.ime,"bs"));srt(w);srt(pr);srt(ni);
   const kk=kotizKids(e).map(kid).filter(Boolean).filter(mine);srt(kk);const tot=kk.reduce((a,k)=>a+kidKotiz(e,k.id),0),paidL=kk.filter(k=>(e.placeno||[]).includes(k.id)),paidS=paidL.reduce((a,k)=>a+kidKotiz(e,k.id),0);
   const sub_=k=>`${esc(grp(k.grupa)?.name||"")}${hasKotiz(e)?` · ${NAST[nastOf(e,k.id)]} · ${kidKotiz(e,k.id)} KM`:""}`;
@@ -1672,10 +1676,10 @@ function evPage(id){const e=S.events.find(x=>x.id===id),st=evStatus(e),p=+e.koti
   <div class="kv"><div><span>Rok za prijavu</span><b>${fdz(e.prijavaDo)}</b></div>${hasKotiz(e)?`<div><span>Kotizacija · pojedinačno</span><b>${p} KM</b></div>${g?`<div><span>Kotizacija · grupa</span><b>${g} KM</b></div><div><span>Pojedinačno + grupa</span><b>${p+g} KM</b></div>`:""}`:""}</div>
   <div class="acts">${S.role==="admin"?`<button class="btn ghost sm" onclick="eventForm('${id}')">Uredi takmičenje</button>`:""}<button class="btn ghost sm" onclick="prijaveForm('${id}')">Uredi prijave i nastup</button><button class="btn sm" onclick="noticeForm('ev:${id}')">📢 Obavijest roditeljima</button>${st.k==="past"?`<button class="btn sm" onclick="view={seg:'res',mode:'ev',ev:'${id}',sz:'${sez(e.datum)}'};render()">Rezultati</button>`:""}</div></div>
   <div class="card"><div class="row"><div class="eyebrow grow">Prijave</div>${hasKotiz(e)?chip("Kotizacija "+tot+" KM","pk"):""}</div>
-  <div class="count"><div><b>${pr.length}</b><span>Prijavljene</span></div><div><b style="color:var(--warn)">${w.length}</b><span>Čekaju roditelje</span></div><div><b style="color:var(--bad)">${ni.length}</b><span>Ne idu</span></div></div>
+  <div class="count"><div><b>${pr.length}</b><span>Prijavljene</span></div>${evOpen(e)?`<div><b style="color:var(--warn)">${w.length}</b><span>Čekaju roditelje</span></div>`:""}<div><b style="color:var(--bad)">${ni.length}</b><span>Ne idu</span></div></div>
   <div class="eyebrow" style="margin-top:12px">Prijavljene (${pr.length})</div><div class="list">${pr.map(k=>row(k,`<button class="btn ghost sm danger" onclick="askUkloni('${id}','${k.id}')">Ukloni</button>`)).join("")||'<div class="li muted">Još niko.</div>'}</div>
-  ${e.pozvane?`<div class="eyebrow" style="margin-top:12px">Čekaju potvrdu roditelja (${w.length})</div><div class="list">${w.map(k=>row(k,`<button class="btn sm" onclick="staffIde('${id}','${k.id}')">Prijavi</button><button class="btn ghost sm danger" onclick="askUkloni('${id}','${k.id}')">Ukloni</button>`)).join("")||'<div class="li muted">Svi roditelji su odgovorili. 🎉</div>'}</div>`:""}
-  ${ni.length?`<div class="eyebrow" style="margin-top:12px">Ne idu (${ni.length})</div><div class="list">${ni.map(k=>row(k,`<button class="btn ghost sm" onclick="staffIde('${id}','${k.id}')">Ipak ide</button>`)).join("")}</div>`:""}
+  ${e.pozvane&&evOpen(e)?`<div class="eyebrow" style="margin-top:12px">Čekaju potvrdu roditelja (${w.length})</div><div class="list">${w.map(k=>row(k,`<button class="btn sm" onclick="staffIde('${id}','${k.id}')">Prijavi</button><button class="btn ghost sm danger" onclick="askUkloni('${id}','${k.id}')">Ukloni</button>`)).join("")||'<div class="li muted">Svi roditelji su odgovorili. 🎉</div>'}</div>`:""}
+  ${ni.length?`<div class="eyebrow" style="margin-top:12px">Ne idu (${ni.length})</div><div class="list">${ni.map(k=>`<div class="li"><div class="grow"><b>${esc(k.ime)}</b><div class="small muted">${auto.has(k.id)?"roditelj se nije izjasnio do roka":"roditelj je javio da ne ide"}</div></div><button class="btn ghost sm" onclick="staffIde('${id}','${k.id}')">Ipak ide</button></div>`).join("")}</div>`:""}
   ${e.pozvane&&w.length&&st.k==="open"?`<button class="btn ghost block" style="margin-top:10px" onclick="remindEv('${id}')">🔔 Podsjeti roditelje koji nisu odgovorili (${w.length})</button>`:""}</div>
   ${hasKotiz(e)&&kk.length?`<div class="card"><div class="row"><div class="eyebrow grow">Kotizacije</div>${chip(paidL.length+" od "+kk.length+" plaćeno","ok")}</div>
   <div class="row" style="align-items:baseline;margin-top:4px"><span class="score" style="font-size:26px">${paidS} KM</span><span class="muted">od ${tot} KM</span></div><div class="bar"><div style="width:${tot?paidS/tot*100:0}%"></div></div>
